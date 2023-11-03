@@ -97,6 +97,7 @@ function LoginPage() {
         setLoggedIn(data.loggedIn);
         setUsername(data.username);
         setUserRoles(data.roles);
+        console.log('success');
       })
       .catch((error) => {
         console.error(error);

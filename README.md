@@ -13,6 +13,7 @@ It still needs the following:
 - [ ] Seperate frontend and backend docker containers
 - [ ] Timeouts on the frontend
 - [ ] Mechanism to refresh auth status on the frontend (if auth error happens, or the user does something that changes their auth status)
+- [ ] Some browsers (Safari) will not offer to save passwords when using fetch and require a page load to trigger the save password dialog, fix.
 
 
 ## Running
@@ -21,6 +22,8 @@ It still needs the following:
 docker build -t gofiber-react-session-csrf-example .
 docker run -p 8080:8080 gofiber-react-example
 ```
+
+The server will be available at [http://localhost:8080](http://localhost:8080).
 
 ## Credentials
 
