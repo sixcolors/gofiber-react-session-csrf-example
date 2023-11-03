@@ -11,6 +11,7 @@ It still needs the following:
 - [ ] Secure handling of login credentials in the backend
 - [ ] Docker compose
 - [ ] Seperate frontend and backend docker containers
+- [ ] SECURE Dockerfiles (ie dont run as root etc).
 - [ ] Timeouts on the frontend
 - [ ] Mechanism to refresh auth status on the frontend (if auth error happens, or the user does something that changes their auth status)
 - [ ] Some browsers (Safari) will not offer to save passwords when using fetch and require a page load to trigger the save password dialog, fix.
