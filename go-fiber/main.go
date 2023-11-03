@@ -17,7 +17,7 @@ var (
 	usersDB = map[string]User{
 		"admin": {
 			Password: "admin",
-			Roles:    []string{"admin"},
+			Roles:    []string{"admin", "user"},
 		},
 		"user": {
 			Password: "user",

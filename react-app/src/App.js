@@ -179,7 +179,7 @@ function App() {
 
   return (
     <UserContext.Provider value={{ username, setUsername, userRoles, setUserRoles, loggedIn, setLoggedIn }}>
-      <div>
+      <div className="main-content">
         <h1>React Frontend</h1>
         {loggedIn ? <AuthorizedContent /> : <LoginPage />}
       </div>

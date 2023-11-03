@@ -21,3 +21,56 @@ It still needs the following:
 docker build -t gofiber-react-session-csrf-example .
 docker run -p 8080:8080 gofiber-react-example
 ```
+
+## Credentials
+
+There are two users:
+
+- `admin` with password `admin`
+- `user` with password `user`
+
+## API
+
+### `POST /api/auth/login`
+
+request:
+```json
+{
+  "username": "admin",
+  "password": "admin"
+}
+```
+
+response:
+```json
+{
+    "loggedIn": true,
+    "username": "admin",
+    "roles": ["admin", "user"]
+}
+```
+
+### `POST /api/auth/logout`
+
+request:
+```json
+{}
+```
+
+response:
+```json
+{
+    "loggedIn": false,
+}
+```
+
+### `GET /api/auth/status`
+
+response:
+```json
+{
+  "loggedIn": true,
+  "username": "admin",
+  "roles": ["admin", "user"]
+}
+```
