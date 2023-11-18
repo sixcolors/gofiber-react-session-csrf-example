@@ -25,3 +25,4 @@ yarn-error.log*
 # fiber
 /go-fiber/vendor
 /go-fiber/*.out
+/go-fiber/tmp
