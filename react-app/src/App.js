@@ -14,6 +14,8 @@ const apiRequest = async (url, options) => {
     },
   });
 
+  // TODO: Check if the status code is 401 (Unauthorized) and Call checkAuthentication again
+
   if (!response.ok) {
     throw new Error(`Request failed: ${response.statusText}`);
   }
@@ -23,6 +25,7 @@ const apiRequest = async (url, options) => {
     return null;
   }
 
+  // Otherwise, parse the response body as JSON
   return response.json();
 };
 
