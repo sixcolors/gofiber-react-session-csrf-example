@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/csrf"
@@ -45,6 +46,10 @@ var (
 		1: {Name: "Thingamabob 1"},
 		2: {Name: "Thingamabob 2"},
 	}
+
+	thingamabobID = 3
+
+	thingamabobMux = &sync.RWMutex{}
 )
 
 func main() {
@@ -211,180 +216,163 @@ func handleAuthStatus(store *session.Store) fiber.Handler {
 }
 
 func setupThingamabobRoutes(app *fiber.App, store *session.Store) {
-	app.Get("/api/thingamabob", getThingamabobs(store))
-	app.Get("/api/thingamabob/:id", getThingamabob(store))
-	app.Post("/api/thingamabob", createThingamabob(store))
-	app.Put("/api/thingamabob/:id", updateThingamabob(store))
-	app.Delete("/api/thingamabob/:id", deleteThingamabob(store))
+	app.Get("/api/thingamabob", requireAuth(store), getThingamabobs)
+	app.Get("/api/thingamabob/:id", requireAuth(store), getThingamabob)
+	app.Post("/api/thingamabob", requireAuth(store, "admin"), createThingamabob)
+	app.Put("/api/thingamabob/:id", requireAuth(store, "admin"), updateThingamabob)
+	app.Delete("/api/thingamabob/:id", requireAuth(store, "admin"), deleteThingamabob)
 }
 
-func getThingamabobs(store *session.Store) fiber.Handler {
-	return func(c *fiber.Ctx) error {
-		// Check for a session
-		sess, err := store.Get(c)
-		if err != nil {
-			return c.SendStatus(fiber.StatusInternalServerError)
-		}
-
-		// Any logged in user can get thingamabobs
-		if v, ok := sess.Get("loggedIn").(bool); !ok || !v {
-			// Return a 401 status
-			return c.SendStatus(fiber.StatusUnauthorized)
-		}
-
-		type response struct {
-			ID   int    `json:"id"`
-			Name string `json:"name"`
-		}
-
-		rows := make([]response, 0, len(thingamabobDB))
-		for id, thingamabob := range thingamabobDB {
-			rows = append(rows, response{
-				ID:   id,
-				Name: thingamabob.Name,
-			})
-		}
-
-		// Sort by id, ascending
-		sort.Slice(rows, func(i, j int) bool {
-			return rows[i].ID < rows[j].ID
-		})
-
-		return c.JSON(rows)
+func getThingamabobs(c *fiber.Ctx) error {
+	type response struct {
+		ID   int    `json:"id"`
+		Name string `json:"name"`
 	}
-}
 
-func getThingamabob(store *session.Store) fiber.Handler {
-	return func(c *fiber.Ctx) error {
-		// Check for a session
-		sess, err := store.Get(c)
-		if err != nil {
-			return c.SendStatus(fiber.StatusInternalServerError)
-		}
+	// Lock the mutex before reading the thingamabob DB
+	thingamabobMux.RLock()
+	defer thingamabobMux.RUnlock()
 
-		// Any logged in user can get thingamabobs
-		if v, ok := sess.Get("loggedIn").(bool); !ok || !v {
-			// Return a 401 status
-			return c.SendStatus(fiber.StatusUnauthorized)
-		}
-
-		// Check for id param
-		paramID := c.Params("id")
-		id, err := strconv.Atoi(paramID)
-		if err != nil {
-			return c.SendStatus(fiber.StatusBadRequest)
-		}
-
-		if thingamabob, ok := thingamabobDB[id]; ok {
-			return c.JSON(fiber.Map{
-				"id":   id,
-				"name": thingamabob.Name,
-			})
-		}
-
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
-			"message": "Thingamabob not found",
+	rows := make([]response, 0, len(thingamabobDB))
+	for id, thingamabob := range thingamabobDB {
+		rows = append(rows, response{
+			ID:   id,
+			Name: thingamabob.Name,
 		})
 	}
+
+	// Sort by id, ascending
+	sort.Slice(rows, func(i, j int) bool {
+		return rows[i].ID < rows[j].ID
+	})
+
+	return c.JSON(rows)
 }
 
-func createThingamabob(store *session.Store) fiber.Handler {
-	return func(c *fiber.Ctx) error {
-		// Check for a session
-		sess, err := store.Get(c)
-		if err != nil {
-			return c.SendStatus(fiber.StatusInternalServerError)
-		}
+func getThingamabob(c *fiber.Ctx) error {
+	// Check for id param
+	paramID := c.Params("id")
+	id, err := strconv.Atoi(paramID)
+	if err != nil {
+		return c.SendStatus(fiber.StatusBadRequest)
+	}
 
-		// Only admins can create thingamabobs
-		if v, ok := sess.Get("loggedIn").(bool); !ok || !v {
-			// Return a 401 status
-			return c.SendStatus(fiber.StatusUnauthorized)
-		}
+	// Lock the mutex before reading the thingamabob DB
+	thingamabobMux.RLock()
+	defer thingamabobMux.RUnlock()
 
-		// Check for admin role
-		if roles, ok := sess.Get("roles").([]string); !ok || !contains(roles, "admin") {
-			// Return a 401 status
-			return c.SendStatus(fiber.StatusUnauthorized)
-		}
-
-		type request struct {
-			Name string `json:"name"`
-		}
-
-		// Parse body into request struct
-		var body request
-		if err := c.BodyParser(&body); err != nil {
-			return c.SendStatus(fiber.StatusBadRequest)
-		}
-
-		// Create a new thingamabob
-		id := len(thingamabobDB) + 1
-		thingamabobDB[id] = Thingamabob{Name: body.Name}
-
+	if thingamabob, ok := thingamabobDB[id]; ok {
 		return c.JSON(fiber.Map{
 			"id":   id,
-			"name": body.Name,
+			"name": thingamabob.Name,
 		})
 	}
+
+	return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+		"message": "Thingamabob not found",
+	})
 }
 
-func updateThingamabob(store *session.Store) fiber.Handler {
-	return func(c *fiber.Ctx) error {
-		// Check for a session
-		sess, err := store.Get(c)
-		if err != nil {
-			return c.SendStatus(fiber.StatusInternalServerError)
-		}
-
-		// Only admins can update thingamabobs
-		if v, ok := sess.Get("loggedIn").(bool); !ok || !v {
-			// Return a 401 status
-			return c.SendStatus(fiber.StatusUnauthorized)
-		}
-
-		// Check for admin role
-		if roles, ok := sess.Get("roles").([]string); !ok || !contains(roles, "admin") {
-			// Return a 401 status
-			return c.SendStatus(fiber.StatusUnauthorized)
-		}
-
-		// Check for id param
-		paramID := c.Params("id")
-
-		// If the id param is not set, return an error
-		if paramID == "" {
-			return c.SendStatus(fiber.StatusBadRequest)
-		}
-
-		// Update the thingamabob
-		if id, err := strconv.Atoi(paramID); err == nil {
-			if thingamabob, ok := thingamabobDB[id]; ok {
-				type request struct {
-					Name string `json:"name"`
-				}
-
-				// Parse body into request struct
-				var body request
-				if err := c.BodyParser(&body); err != nil {
-					return c.SendStatus(fiber.StatusBadRequest)
-				}
-
-				thingamabob.Name = body.Name
-				thingamabobDB[id] = thingamabob
-
-				return c.JSON(fiber.Map{
-					"id":   id,
-					"name": body.Name,
-				})
-			}
-		}
-
-		return c.SendStatus(fiber.StatusNotFound)
+func createThingamabob(c *fiber.Ctx) error {
+	type request struct {
+		Name string `json:"name"`
 	}
+
+	// Parse body into request struct
+	var body request
+	if err := c.BodyParser(&body); err != nil {
+		return c.SendStatus(fiber.StatusBadRequest)
+	}
+
+	// Lock the mutex before creating a new thingamabob and incrementing the ID
+	thingamabobMux.Lock()
+	defer thingamabobMux.Unlock()
+
+	// Create a new thingamabob
+	thingamabobDB[thingamabobID] = Thingamabob(body)
+
+	// Increment the thingamabob ID
+	thisID := thingamabobID
+	thingamabobID++
+
+	return c.JSON(fiber.Map{
+		"id":   thisID,
+		"name": body.Name,
+	})
 }
 
-func deleteThingamabob(store *session.Store) fiber.Handler {
+func updateThingamabob(c *fiber.Ctx) error {
+	// Check for id param
+	paramID := c.Params("id")
+
+	// If the id param is not set, return an error
+	if paramID == "" {
+		return c.SendStatus(fiber.StatusBadRequest)
+	}
+
+	// Lock the mutex before updating the thingamabob
+	thingamabobMux.Lock()
+	defer thingamabobMux.Unlock()
+
+	// Update the thingamabob
+	if id, err := strconv.Atoi(paramID); err == nil {
+		if thingamabob, ok := thingamabobDB[id]; ok {
+			type request struct {
+				Name string `json:"name"`
+			}
+
+			// Parse body into request struct
+			var body request
+			if err := c.BodyParser(&body); err != nil {
+				return c.SendStatus(fiber.StatusBadRequest)
+			}
+
+			thingamabob.Name = body.Name
+			thingamabobDB[id] = thingamabob
+
+			return c.JSON(fiber.Map{
+				"id":   id,
+				"name": body.Name,
+			})
+		}
+	}
+
+	return c.SendStatus(fiber.StatusNotFound)
+}
+
+func deleteThingamabob(c *fiber.Ctx) error {
+	// Check for id param
+	paramID := c.Params("id")
+
+	// If the id param is not set, return an error
+	if paramID == "" {
+		return c.SendStatus(fiber.StatusBadRequest)
+	}
+
+	// Delete the thingamabob
+	if id, err := strconv.Atoi(paramID); err == nil {
+		if _, ok := thingamabobDB[id]; ok {
+			// Lock the mutex before deleting the thingamabob
+			thingamabobMux.Lock()
+			defer thingamabobMux.Unlock()
+
+			delete(thingamabobDB, id)
+			return c.SendStatus(fiber.StatusNoContent)
+		}
+	}
+
+	return c.SendStatus(fiber.StatusNotFound)
+}
+
+// Helper function to require a authenticated for a route
+// optionally with a matching role (or any of the roles passed)
+//
+//	Example: app.Post("/api/thingamabob", requireAuth("admin"), getThingamabobs(store))
+//
+// If no roles are passed, any logged in user can access the route
+// If one or more roles are passed, the user must have at least one of the roles
+// to access the route.
+func requireAuth(store *session.Store, roles ...string) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		// Check for a session
 		sess, err := store.Get(c)
@@ -392,35 +380,29 @@ func deleteThingamabob(store *session.Store) fiber.Handler {
 			return c.SendStatus(fiber.StatusInternalServerError)
 		}
 
-		// Only admins can delete thingamabobs
+		// Check if the user is logged in
 		if v, ok := sess.Get("loggedIn").(bool); !ok || !v {
-			// Return a 401 status
 			return c.SendStatus(fiber.StatusUnauthorized)
 		}
 
-		// Check for admin role
-		if roles, ok := sess.Get("roles").([]string); !ok || !contains(roles, "admin") {
-			// Return a 401 status
-			return c.SendStatus(fiber.StatusUnauthorized)
-		}
-
-		// Check for id param
-		paramID := c.Params("id")
-
-		// If the id param is not set, return an error
-		if paramID == "" {
-			return c.SendStatus(fiber.StatusBadRequest)
-		}
-
-		// Delete the thingamabob
-		if id, err := strconv.Atoi(paramID); err == nil {
-			if _, ok := thingamabobDB[id]; ok {
-				delete(thingamabobDB, id)
-				return c.SendStatus(fiber.StatusNoContent)
+		// Check if a role is required and if the user has the required role
+		if len(roles) > 0 {
+			match := false
+			if userRoles, ok := sess.Get("roles").([]string); ok {
+				for _, role := range roles {
+					if contains(userRoles, role) {
+						match = true
+						break
+					}
+				}
+			}
+			if !match {
+				return c.SendStatus(fiber.StatusUnauthorized)
 			}
 		}
 
-		return c.SendStatus(fiber.StatusNotFound)
+		// Continue to the next handler
+		return c.Next()
 	}
 }
 
