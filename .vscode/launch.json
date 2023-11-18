@@ -8,7 +8,7 @@
             "remoteRoot": "/app"
         },
         {
-            "name": "Delve into Docker",
+            "name": "Docker: Attach to Go (Delve)",
             "type": "go",
             "request": "attach",
             "mode": "remote",

@@ -10,6 +10,8 @@ It still needs the following:
 
 - [x] Docker compose for development (see [docker-compose.yml](docker-compose.yml))
 - [x] React Dev Tools do not work with the proxy, fix
+- [x] Go Delve remote debugger (see [launch.json](.vscode/launch.json)) `Docker: Attach to Go (Delve)` config for debugging the backend in VSCode.
+- [ ] React remote debugger (see [launch.json](.vscode/launch.json)) `Docker: Attach to node` config for debugging the frontend in VSCode.
 - [ ] Seperate frontend and backend docker containers
 - [ ] SECURE Dockerfiles (ie dont run as root etc)
 - [ ] Secure handling of login credentials in the backend
