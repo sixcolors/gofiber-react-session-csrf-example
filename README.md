@@ -105,7 +105,7 @@ response:
 response:
 ```json
 {
-  rows: [
+  [
     {
       "id": 1,
       "name": "Thingamabob 1"
