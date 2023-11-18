@@ -36,7 +36,7 @@ docker-compose up
 
 The server will be available at [http://localhost:8080](http://localhost:8080).
 
-Go delve remote debugger will be available at [http://localhost:2345](http://localhost:2345) (see [launch.json](.vscode/launch.json)) `Delve into Docker` config for debugging the backend in VSCode.
+Go delve remote debugger will be available at [http://localhost:2345](http://localhost:2345) (see [launch.json](.vscode/launch.json)) `Docker: Attach to Go (Delve)` config for debugging the backend in VSCode.
 
 ## Production
 
