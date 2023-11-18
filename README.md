@@ -30,9 +30,9 @@ docker-compose up
 
 The server will be available at [http://localhost:8080](http://localhost:8080).
 
-To support web socket based hot reloading of the frontend, the frontend is served on port 3000 and the Ngix reverse proxy is configured to proxy `/ws` requests to the frontend container.
+To support web socket based hot reloading of the frontend, Ngix is configured to proxy_pass `/ws` requests to the frontend container.
 
-Note: React Dev Tools require `WDS_SOCKET_PORT` to be set to `8080` to work with the proxy.
+Note: React Dev Tools require ENV `WDS_SOCKET_PORT` to be set to `8080` to work with the proxy, (see [react-app/Dockerfile.dev](react-app/Dockerfile.dev)).
 
 The backend will be restarted when changes are made to the backend code using [air](https://github.com/cosmtrek/air).
 
