@@ -1,0 +1,21 @@
+FROM golang:latest
+
+WORKDIR /app
+
+# Install git and air
+RUN go install github.com/cosmtrek/air@latest && go install github.com/go-delve/delve/cmd/dlv@latest
+
+# Add $GOPATH/bin to $PATH
+ENV PATH=$PATH:/go/bin
+
+# Set environment variables
+ENV SESSION_STORE=redis://redis:6379/0
+
+COPY go.mod go.sum ./
+
+RUN go mod download
+
+# Expose port 2345 for delve
+EXPOSE 2345
+
+CMD ["air", "-c", ".air.toml"]

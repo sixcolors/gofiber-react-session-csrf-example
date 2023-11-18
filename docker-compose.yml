@@ -1,0 +1,59 @@
+version: '3.8'
+
+services:
+  # React Frontend
+  react-app:
+    build:
+      context: ./react-app
+      dockerfile: Dockerfile.dev
+    expose:
+      - "3000"  # Expose the port within the Docker network
+    volumes:
+      - ./react-app:/app
+    environment:
+      - NODE_ENV=development
+    networks:
+      - internal
+
+  # Go Fiber API
+  go-fiber:
+    build:
+      context: ./go-fiber
+      dockerfile: Dockerfile.dev
+    expose:
+      - "3001"  # Expose the port within the Docker network
+    ports:
+      - "2345:2345" # Delve debugger
+    volumes:
+      - ./go-fiber:/app
+    environment:
+      - AIR_ENV=development
+    networks:
+      - internal
+
+  redis:
+    image: redis:alpine
+    expose:
+      - "6379"
+    networks:
+      - internal
+
+  # Nginx Reverse Proxy
+  nginx-proxy:
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile.dev
+    ports:
+      # - "443:443"  # HTTPS
+      - "8080:8080"    # HTTP
+    volumes:
+      - ./nginx/nginx.dev.conf:/etc/nginx/conf.d/nginx.conf
+    depends_on:
+      - react-app
+      - go-fiber
+    networks:
+      - internal
+
+networks:
+  internal:
+    driver: bridge

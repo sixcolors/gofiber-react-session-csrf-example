@@ -29,12 +29,12 @@ COPY --from=react-build /app/build /usr/share/nginx/html
 COPY --from=go-build /go/bin/app /usr/share/nginx/html/api
 
 # Copy the NGINX configuration
-COPY ./nginx.conf /etc/nginx/conf.d/
+COPY ./nginx/nginx.conf /etc/nginx/conf.d/
 
 # Run GoFiber binary
 RUN chmod +x /usr/share/nginx/html/api
 
-COPY ./startup.sh /app/startup.sh
+COPY ./nginx/startup.sh /app/startup.sh
 
 # Expose port 8080
 EXPOSE 8080

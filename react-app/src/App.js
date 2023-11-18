@@ -8,6 +8,43 @@ const UserContext = createContext();
 // AuthorizedContent component to display authorized content
 function AuthorizedContent() {
   const { username, setUsername, userRoles, setUserRoles, setLoggedIn } = useContext(UserContext);
+  const [thingamabobs, setThingamabobs] = useState([]);
+
+  const getThingamabobs = useCallback(() => {
+    // get csrf token from cookie 'csrf_'
+    const csrfToken = Cookies.get('csrf_');
+
+    // Make a request to the API to get thingamabobs
+    fetch('/api/thingamabob', {
+      method: 'GET', // Use GET request
+      headers: {
+        'X-CSRF-Token': csrfToken, // pass csrf token in header
+      },
+    })
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error('Get thingamabobs failed');
+        }
+        return response.json();
+      })
+      .then((data) => {
+        console.log(data);
+        if (!data) {
+          throw new Error('Get thingamabobs failed');
+        }
+      
+        setThingamabobs(data);
+      })
+      .catch((error) => {
+        console.error(error);
+      });
+  }
+  , [setThingamabobs]);
+
+  // Call the getThingamabobs function when the component mounts
+  useEffect(() => {
+    getThingamabobs();
+  }, [getThingamabobs]);
 
   const handleLogout = async (e) => {
     e.preventDefault();
@@ -52,10 +89,88 @@ function AuthorizedContent() {
       });
   }
 
+  const handleAddThingamabob = async (e, thingamabob) => {
+    e.preventDefault();
+
+    // get csrf token from cookie 'csrf_'
+    const csrfToken = Cookies.get('csrf_');
+
+    // Make a request to the API to add a thingamabob
+    fetch('/api/thingamabob', {
+      method: 'POST', // Use POST request
+      headers: {
+        'Content-Type': 'application/json', // Specify content type
+        'X-CSRF-Token': csrfToken, // pass csrf token in header
+      },
+      body: JSON.stringify(thingamabob), // stringify JSON data
+    })
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error('Add thingamabob failed');
+        }
+        return response.json();
+      })
+      .then((data) => {
+        // add the new thingamabob to the list of thingamabobs
+        setThingamabobs([...thingamabobs, data]);
+        // reset the form
+        e.target.reset();
+      })
+      .catch((error) => {
+        alert(error);
+        console.error(error);
+      });
+  }
+
+  const handleDeleteThingamabob = async (id) => {
+    // get csrf token from cookie 'csrf_'
+    const csrfToken = Cookies.get('csrf_');
+
+    // Make a request to the API to delete a thingamabob
+    fetch(`/api/thingamabob/${id}`, {
+      method: 'DELETE', // Use DELETE request
+      headers: {
+        'X-CSRF-Token': csrfToken, // pass csrf token in header
+      },
+    })
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error('Delete thingamabob failed');
+        }
+        setThingamabobs(thingamabobs.filter(thingamabob => thingamabob.id !== id));
+      })
+      .catch((error) => {
+        alert(error);
+        console.error(error);
+      });
+  }
+
   return (
     <div>
       <h2>Welcome, {username}!</h2>
       <p>User Roles: {userRoles?.join(', ')}</p>
+      <hr />
+      <h3>Thingamabobs (Authorized Content)</h3>
+      <ul>
+      {thingamabobs.map(thingamabob => (
+        <li key={thingamabob.id}>
+          {thingamabob.name}
+          {userRoles.includes('admin') && (
+            <button className="danger ml-1" onClick={() => {handleDeleteThingamabob(thingamabob.id)}}>Delete</button>
+          )}
+        </li>
+      ))}
+      </ul>
+      {userRoles.includes('admin') && (
+        <div>
+          <h3>Add Thingamabob</h3>
+          <form onSubmit={(e) => handleAddThingamabob(e, { name: e.target.name.value })}>
+            <label>Name:</label>
+            <input type="text" name="name" placeholder='Thingamabob #'/>
+            <button type="submit">Add Thingamabob</button>
+          </form>
+        </div>
+      )}
       <hr />
       <button onClick={handleLogout}>Logout</button>
       {/* Add your authorized content here */}
@@ -181,7 +296,7 @@ function App() {
   return (
     <UserContext.Provider value={{ username, setUsername, userRoles, setUserRoles, loggedIn, setLoggedIn }}>
       <div className="main-content">
-        <h1>React Frontend</h1>
+        <h1>Example React Frontend</h1>
         {loggedIn ? <AuthorizedContent /> : <LoginPage />}
       </div>
     </UserContext.Provider>
