@@ -24,17 +24,17 @@ It still needs the following:
 
 A docker-compose file is provided for development. It will start the backend, frontend and a redis cache.
 
-The backend will be restarted when changes are made to the backend code using [air](https://github.com/cosmtrek/air).
-
-To support web socket based hot reloading of the frontend, the frontend is served on port 3000 and the Ngix reverse proxy is configured to proxy `/ws` requests to the frontend container.
-
-Note: React Dev Tools require `WDS_SOCKET_PORT` to be set to `8080` to work with the proxy.
-
 ```bash
 docker-compose up
 ```
 
 The server will be available at [http://localhost:8080](http://localhost:8080).
+
+To support web socket based hot reloading of the frontend, the frontend is served on port 3000 and the Ngix reverse proxy is configured to proxy `/ws` requests to the frontend container.
+
+Note: React Dev Tools require `WDS_SOCKET_PORT` to be set to `8080` to work with the proxy.
+
+The backend will be restarted when changes are made to the backend code using [air](https://github.com/cosmtrek/air).
 
 Go delve remote debugger will be available at [http://localhost:2345](http://localhost:2345) (see [launch.json](.vscode/launch.json)) `Docker: Attach to Go (Delve)` config for debugging the backend in VSCode.
 
