@@ -2,46 +2,43 @@ import Cookies from 'js-cookie';
 import './App.css';
 import React, { useState, useEffect, createContext, useContext, useCallback } from 'react';
 
-// Create a context
 const UserContext = createContext();
 
-// AuthorizedContent component to display authorized content
+const apiRequest = async (url, options) => {
+  const csrfToken = Cookies.get('csrf_');
+  const response = await fetch(url, {
+    ...options,
+    headers: {
+      ...options.headers,
+      'X-CSRF-Token': csrfToken,
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Request failed: ${response.statusText}`);
+  }
+
+  // If the response status is 204 (No Content), return null
+  if (response.status === 204) {
+    return null;
+  }
+
+  return response.json();
+};
+
 function AuthorizedContent() {
   const { username, setUsername, userRoles, setUserRoles, setLoggedIn } = useContext(UserContext);
   const [thingamabobs, setThingamabobs] = useState([]);
 
-  const getThingamabobs = useCallback(() => {
-    // get csrf token from cookie 'csrf_'
-    const csrfToken = Cookies.get('csrf_');
+  const getThingamabobs = useCallback(async () => {
+    try {
+      const data = await apiRequest('/api/thingamabob', { method: 'GET' });
+      setThingamabobs(data);
+    } catch (error) {
+      console.error(error);
+    }
+  }, [setThingamabobs]);
 
-    // Make a request to the API to get thingamabobs
-    fetch('/api/thingamabob', {
-      method: 'GET', // Use GET request
-      headers: {
-        'X-CSRF-Token': csrfToken, // pass csrf token in header
-      },
-    })
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error('Get thingamabobs failed');
-        }
-        return response.json();
-      })
-      .then((data) => {
-        console.log(data);
-        if (!data) {
-          throw new Error('Get thingamabobs failed');
-        }
-      
-        setThingamabobs(data);
-      })
-      .catch((error) => {
-        console.error(error);
-      });
-  }
-  , [setThingamabobs]);
-
-  // Call the getThingamabobs function when the component mounts
   useEffect(() => {
     getThingamabobs();
   }, [getThingamabobs]);
@@ -49,101 +46,45 @@ function AuthorizedContent() {
   const handleLogout = async (e) => {
     e.preventDefault();
 
-    // get csrf token from cookie 'csrf_'
-    const csrfToken = Cookies.get('csrf_');
+    try {
+      await apiRequest('/api/auth/logout', { method: 'POST' });
 
-    // Make a request to the API to logout the user
-    fetch('/api/auth/logout', {
-      method: 'POST', // Use POST request
-      headers: {
-        'Content-Type': 'application/json', // Specify content type
-        'X-CSRF-Token': csrfToken, // pass csrf token in header
-      },
-    })
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error('Logout failed');
-        }
-        return response.json();
-      })
-      .then((data) => {
-        // call the status endpoint to check if the user is logged in and get a new csrf token
-        fetch('/api/auth/status')
-        .then((response) => {
-          if (!response.ok) {
-            throw new Error('Logout failed');
-          }
-          return response.json();
-        })
-        .then((data) => {
-          setLoggedIn(data.loggedIn);
-          setUsername(data.username || '');
-          setUserRoles(data.roles || []);
-        })
-        .catch((error) => {
-          console.error(error);
-        });
-      })
-      .catch((error) => {
-        console.error(error);
-      });
-  }
+      const statusData = await apiRequest('/api/auth/status', { method: 'GET' });
+      setLoggedIn(statusData.loggedIn);
+      setUsername(statusData.username || '');
+      setUserRoles(statusData.roles || []);
+    } catch (error) {
+      console.error(error);
+    }
+  };
 
-  const handleAddThingamabob = async (e, thingamabob) => {
+  const handleAddThingamabob = async (e, { name }) => {
     e.preventDefault();
 
-    // get csrf token from cookie 'csrf_'
-    const csrfToken = Cookies.get('csrf_');
-
-    // Make a request to the API to add a thingamabob
-    fetch('/api/thingamabob', {
-      method: 'POST', // Use POST request
-      headers: {
-        'Content-Type': 'application/json', // Specify content type
-        'X-CSRF-Token': csrfToken, // pass csrf token in header
-      },
-      body: JSON.stringify(thingamabob), // stringify JSON data
-    })
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error('Add thingamabob failed');
-        }
-        return response.json();
-      })
-      .then((data) => {
-        // add the new thingamabob to the list of thingamabobs
-        setThingamabobs([...thingamabobs, data]);
-        // reset the form
-        e.target.reset();
-      })
-      .catch((error) => {
-        alert(error);
-        console.error(error);
+    try {
+      const data = await apiRequest('/api/thingamabob', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
       });
-  }
+
+      setThingamabobs([...thingamabobs, data]);
+      e.target.reset();
+    } catch (error) {
+      alert(error.message);
+      console.error(error);
+    }
+  };
 
   const handleDeleteThingamabob = async (id) => {
-    // get csrf token from cookie 'csrf_'
-    const csrfToken = Cookies.get('csrf_');
-
-    // Make a request to the API to delete a thingamabob
-    fetch(`/api/thingamabob/${id}`, {
-      method: 'DELETE', // Use DELETE request
-      headers: {
-        'X-CSRF-Token': csrfToken, // pass csrf token in header
-      },
-    })
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error('Delete thingamabob failed');
-        }
-        setThingamabobs(thingamabobs.filter(thingamabob => thingamabob.id !== id));
-      })
-      .catch((error) => {
-        alert(error);
-        console.error(error);
-      });
-  }
+    try {
+      await apiRequest(`/api/thingamabob/${id}`, { method: 'DELETE' });
+      setThingamabobs(thingamabobs.filter(thingamabob => thingamabob.id !== id));
+    } catch (error) {
+      alert(error.message);
+      console.error(error);
+    }
+  };
 
   return (
     <div>
@@ -152,14 +93,14 @@ function AuthorizedContent() {
       <hr />
       <h3>Thingamabobs (Authorized Content)</h3>
       <ul>
-      {thingamabobs.map(thingamabob => (
-        <li key={thingamabob.id}>
-          {thingamabob.name}
-          {userRoles.includes('admin') && (
-            <button className="danger ml-1" onClick={() => {handleDeleteThingamabob(thingamabob.id)}}>Delete</button>
-          )}
-        </li>
-      ))}
+        {thingamabobs.map(thingamabob => (
+          <li key={thingamabob.id}>
+            {thingamabob.name}
+            {userRoles.includes('admin') && (
+              <button className="danger ml-1" onClick={() => {handleDeleteThingamabob(thingamabob.id)}}>Delete</button>
+            )}
+          </li>
+        ))}
       </ul>
       {userRoles.includes('admin') && (
         <div>
@@ -173,51 +114,34 @@ function AuthorizedContent() {
       )}
       <hr />
       <button onClick={handleLogout}>Logout</button>
-      {/* Add your authorized content here */}
     </div>
   );
 }
 
-// LoginPage component to display the login page and form
 function LoginPage() {
   const [fromUsername, setFromUsername] = useState('');
   const [formPassword, setFormPassword] = useState('');
-
   const [error, setError] = useState('');
   const { setUsername, setLoggedIn, setUserRoles } = useContext(UserContext);
 
-  // Function to handle form submission
   const handleLogin = async (e) => {
     e.preventDefault();
 
-    // get csrf token from cookie 'csrf_'
-    const csrfToken = Cookies.get('csrf_');
-
-    // Make a request to the API to login the user
-    fetch('/api/auth/login', {
-      method: 'POST', // Use POST request
-      headers: {
-        'Content-Type': 'application/json', // Specify content type
-        'X-CSRF-Token': csrfToken, // pass csrf token in header
-      },
-      body: JSON.stringify({ username: fromUsername, password: formPassword }), // stringify JSON data
-    })
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error('Login failed');
-        }
-        return response.json();
-      })
-      .then((data) => {
-        setLoggedIn(data.loggedIn);
-        setUsername(data.username);
-        setUserRoles(data.roles);
-        console.log('Login successful');
-      })
-      .catch((error) => {
-        console.error(error);
-        setError('Login failed');
+    try {
+      const data = await apiRequest('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: fromUsername, password: formPassword }),
       });
+
+      setLoggedIn(data.loggedIn);
+      setUsername(data.username);
+      setUserRoles(data.roles);
+      console.log('Login successful');
+    } catch (error) {
+      console.error(error);
+      setError('Login failed');
+    }
   };
 
   return (
@@ -250,45 +174,24 @@ function LoginPage() {
 }
 
 function App() {
-
   const [username, setUsername] = useState('');
   const [loggedIn, setLoggedIn] = useState(false);
   const [userRoles, setUserRoles] = useState([]);
 
-  // Function to check authentication status
-  const checkAuthentication = useCallback(() => {
-    // get csrf token from cookie 'csrf_'
-    const csrfToken = Cookies.get('csrf_token');
-
-    // Make a request to the API to check if the user is logged in
-    fetch('/api/auth/status', {
-      method: 'GET', // Use GET request
-      headers: {
-        'X-CSRF-Token': csrfToken, // pass csrf token in header
-      },
-    })
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error('Authentication failed');
-        }
-        return response.json();
-      })
-      .then((data) => {
-        console.log(data);
-        setLoggedIn(data.loggedIn);
-        setUsername(data.username || '');
-        setUserRoles(data.roles || []);
-      })
-      .catch((error) => {
-        console.error(error);
-        setLoggedIn(false);
-        setUsername('');
-        setUserRoles([]);
-      });
-    
+  const checkAuthentication = useCallback(async () => {
+    try {
+      const statusData = await apiRequest('/api/auth/status', { method: 'GET' });
+      setLoggedIn(statusData.loggedIn);
+      setUsername(statusData.username || '');
+      setUserRoles(statusData.roles || []);
+    } catch (error) {
+      console.error(error);
+      setLoggedIn(false);
+      setUsername('');
+      setUserRoles([]);
+    }
   }, [setUsername, setLoggedIn, setUserRoles]);
 
-  // Call the checkAuthentication function when the component mounts
   useEffect(() => {
     checkAuthentication();
   }, [checkAuthentication]);
