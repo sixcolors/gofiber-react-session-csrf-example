@@ -92,7 +92,7 @@ form div {
 
 input[type="text"], input[type="password"] {
   padding: 10px;
-  width: 100%;
+  width: calc(100% - 22px);
   border-radius: 5px;
   border: 1px solid #ddd;
 }
