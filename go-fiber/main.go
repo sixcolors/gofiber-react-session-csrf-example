@@ -14,14 +14,14 @@ import (
 	"github.com/gofiber/storage/redis/v3"
 )
 
-// fake user db
+// User represents a user in the system
 type User struct {
 	Username string
 	Password string
 	Roles    []string
 }
 
-// thingamabob db
+// Thingamabob represents a thingamabob in the system
 type Thingamabob struct {
 	Name string `json:"name"`
 }
@@ -29,6 +29,7 @@ type Thingamabob struct {
 var (
 	ErrRedisConnStr = errors.New("invalid Redis connection string")
 
+	//Fake DBs
 	usersDB = map[string]User{
 		"admin": {
 			Password: "admin",
@@ -41,12 +42,8 @@ var (
 	}
 
 	thingamabobDB = map[int]Thingamabob{
-		1: {
-			Name: "Thingamabob 1",
-		},
-		2: {
-			Name: "Thingamabob 2",
-		},
+		1: {Name: "Thingamabob 1"},
+		2: {Name: "Thingamabob 2"},
 	}
 )
 
@@ -54,38 +51,7 @@ func main() {
 	app := fiber.New()
 
 	// Create a new session manager
-	var store *session.Store
-
-	// Check for a session store env var
-	sessionStoreEnv := os.Getenv("SESSION_STORE")
-	if strings.HasPrefix(sessionStoreEnv, "redis://") {
-		log.Println("Using Redis session store")
-		// Parse the Redis connection string
-		host, port, db, err := parseRedisConnStr(sessionStoreEnv)
-		if err != nil {
-			log.Printf("Error parsing Redis connection string: %v", err)
-			return
-		}
-
-		// Create a new Redis store
-		storage := redis.New(redis.Config{
-			Host:     host,
-			Port:     port,
-			Database: db,
-		})
-
-		store = session.New(session.Config{
-			Storage: storage,
-		})
-	} else {
-		log.Println("Using in-memory session store")
-		// Create a new in-memory store
-		// you could use other stores as well, see the list of stores here:
-		//
-		// https://docs.gofiber.io/api/middleware/session#config
-		//
-		store = session.New()
-	}
+	store := createSessionStore()
 
 	// Create a new CSRF middleware
 	csrfConfig := csrf.Config{
@@ -97,12 +63,64 @@ func main() {
 
 	app.Use(csrf.New(csrfConfig))
 
-	app.Get("/api/" /* csrf.New(csrfConfig) */, func(c *fiber.Ctx) error {
+	app.Get("/api/", func(c *fiber.Ctx) error {
 		return c.SendString("Hello, World 👋!")
 	})
 
-	// Define a route to handle the login request
-	app.Post("/api/auth/login", func(c *fiber.Ctx) error {
+	// Auth routes
+	setupAuthRoutes(app, store)
+
+	// Thingamabob routes
+	setupThingamabobRoutes(app, store)
+
+	// Start the Fiber app
+	_ = app.Listen(":3001")
+}
+
+func createSessionStore() *session.Store {
+	var store *session.Store
+
+	// Check for a session store env var
+	sessionStoreEnv := os.Getenv("SESSION_STORE")
+	if strings.HasPrefix(sessionStoreEnv, "redis://") {
+		log.Println("Using Redis session store")
+		store = createRedisSessionStore(sessionStoreEnv)
+	} else {
+		log.Println("Using in-memory session store")
+		store = session.New()
+	}
+
+	return store
+}
+
+func createRedisSessionStore(redisConnStr string) *session.Store {
+	// Parse the Redis connection string
+	host, port, db, err := parseRedisConnStr(redisConnStr)
+	if err != nil {
+		// Log and exit on error
+		log.Fatal("Error parsing Redis connection string: ", err)
+	}
+
+	// Create a new Redis store
+	storage := redis.New(redis.Config{
+		Host:     host,
+		Port:     port,
+		Database: db,
+	})
+
+	return session.New(session.Config{
+		Storage: storage,
+	})
+}
+
+func setupAuthRoutes(app *fiber.App, store *session.Store) {
+	app.Post("/api/auth/login", handleLogin(store))
+	app.Post("/api/auth/logout", handleLogout(store))
+	app.Get("/api/auth/status", handleAuthStatus(store))
+}
+
+func handleLogin(store *session.Store) fiber.Handler {
+	return func(c *fiber.Ctx) error {
 		// Check for a session
 		sess, err := store.Get(c)
 		if err != nil {
@@ -120,7 +138,7 @@ func main() {
 			return c.SendStatus(fiber.StatusBadRequest)
 		}
 
-		// this is just a simulated login do this securly with hashing and take measures to prevent timing attacks
+		// Simulated login - should be replaced with secure authentication logic
 		if user, ok := usersDB[body.Username]; ok {
 			if user.Password == body.Password {
 				// Set session values
@@ -144,11 +162,11 @@ func main() {
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
 			"loggedIn": false,
 		})
+	}
+}
 
-	})
-
-	// Define a route to handle the logout request
-	app.Post("/api/auth/logout", func(c *fiber.Ctx) error {
+func handleLogout(store *session.Store) fiber.Handler {
+	return func(c *fiber.Ctx) error {
 		// Check for a session
 		sess, err := store.Get(c)
 		if err != nil {
@@ -163,10 +181,11 @@ func main() {
 		return c.Status(fiber.StatusOK).JSON(fiber.Map{
 			"loggedIn": false,
 		})
-	})
+	}
+}
 
-	// Define a route to handle the auth status request
-	app.Get("/api/auth/status", func(c *fiber.Ctx) error {
+func handleAuthStatus(store *session.Store) fiber.Handler {
+	return func(c *fiber.Ctx) error {
 		// Check for a session
 		sess, err := store.Get(c)
 		if err != nil {
@@ -188,9 +207,19 @@ func main() {
 			"username": username,
 			"roles":    roles,
 		})
-	})
+	}
+}
 
-	app.Get("/api/thingamabob", func(c *fiber.Ctx) error {
+func setupThingamabobRoutes(app *fiber.App, store *session.Store) {
+	app.Get("/api/thingamabob", getThingamabobs(store))
+	app.Get("/api/thingamabob/:id", getThingamabob(store))
+	app.Post("/api/thingamabob", createThingamabob(store))
+	app.Put("/api/thingamabob/:id", updateThingamabob(store))
+	app.Delete("/api/thingamabob/:id", deleteThingamabob(store))
+}
+
+func getThingamabobs(store *session.Store) fiber.Handler {
+	return func(c *fiber.Ctx) error {
 		// Check for a session
 		sess, err := store.Get(c)
 		if err != nil {
@@ -216,15 +245,17 @@ func main() {
 			})
 		}
 
-		// sort by id, ascending
+		// Sort by id, ascending
 		sort.Slice(rows, func(i, j int) bool {
 			return rows[i].ID < rows[j].ID
 		})
 
 		return c.JSON(rows)
-	})
+	}
+}
 
-	app.Get("/api/thingamabob/:id", func(c *fiber.Ctx) error {
+func getThingamabob(store *session.Store) fiber.Handler {
+	return func(c *fiber.Ctx) error {
 		// Check for a session
 		sess, err := store.Get(c)
 		if err != nil {
@@ -254,9 +285,11 @@ func main() {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
 			"message": "Thingamabob not found",
 		})
-	})
+	}
+}
 
-	app.Post("/api/thingamabob", func(c *fiber.Ctx) error {
+func createThingamabob(store *session.Store) fiber.Handler {
+	return func(c *fiber.Ctx) error {
 		// Check for a session
 		sess, err := store.Get(c)
 		if err != nil {
@@ -287,15 +320,17 @@ func main() {
 
 		// Create a new thingamabob
 		id := len(thingamabobDB) + 1
-		thingamabobDB[id] = Thingamabob(body)
+		thingamabobDB[id] = Thingamabob{Name: body.Name}
 
 		return c.JSON(fiber.Map{
 			"id":   id,
 			"name": body.Name,
 		})
-	})
+	}
+}
 
-	app.Put("/api/thingamabob/:id", func(c *fiber.Ctx) error {
+func updateThingamabob(store *session.Store) fiber.Handler {
+	return func(c *fiber.Ctx) error {
 		// Check for a session
 		sess, err := store.Get(c)
 		if err != nil {
@@ -323,32 +358,34 @@ func main() {
 		}
 
 		// Update the thingamabob
-		if id, err := strconv.Atoi(paramID); err != nil {
-			return c.SendStatus(fiber.StatusBadRequest)
-		} else if thingamabob, ok := thingamabobDB[id]; ok {
-			type request struct {
-				Name string `json:"name"`
+		if id, err := strconv.Atoi(paramID); err == nil {
+			if thingamabob, ok := thingamabobDB[id]; ok {
+				type request struct {
+					Name string `json:"name"`
+				}
+
+				// Parse body into request struct
+				var body request
+				if err := c.BodyParser(&body); err != nil {
+					return c.SendStatus(fiber.StatusBadRequest)
+				}
+
+				thingamabob.Name = body.Name
+				thingamabobDB[id] = thingamabob
+
+				return c.JSON(fiber.Map{
+					"id":   id,
+					"name": body.Name,
+				})
 			}
-
-			// Parse body into request struct
-			var body request
-			if err := c.BodyParser(&body); err != nil {
-				return c.SendStatus(fiber.StatusBadRequest)
-			}
-
-			thingamabob.Name = body.Name
-			thingamabobDB[id] = thingamabob
-
-			return c.JSON(fiber.Map{
-				"id":   id,
-				"name": body.Name,
-			})
 		}
 
 		return c.SendStatus(fiber.StatusNotFound)
-	})
+	}
+}
 
-	app.Delete("/api/thingamabob/:id", func(c *fiber.Ctx) error {
+func deleteThingamabob(store *session.Store) fiber.Handler {
+	return func(c *fiber.Ctx) error {
 		// Check for a session
 		sess, err := store.Get(c)
 		if err != nil {
@@ -376,18 +413,15 @@ func main() {
 		}
 
 		// Delete the thingamabob
-		if id, err := strconv.Atoi(paramID); err != nil {
-			return c.SendStatus(fiber.StatusBadRequest)
-		} else if _, ok := thingamabobDB[id]; ok {
-			delete(thingamabobDB, id)
-			return c.SendStatus(fiber.StatusNoContent)
+		if id, err := strconv.Atoi(paramID); err == nil {
+			if _, ok := thingamabobDB[id]; ok {
+				delete(thingamabobDB, id)
+				return c.SendStatus(fiber.StatusNoContent)
+			}
 		}
 
 		return c.SendStatus(fiber.StatusNotFound)
-	})
-
-	// Start the Fiber app
-	_ = app.Listen(":3001")
+	}
 }
 
 // Helper function to check if a slice contains a string
