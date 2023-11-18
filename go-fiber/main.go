@@ -295,6 +295,59 @@ func main() {
 		})
 	})
 
+	app.Put("/api/thingamabob/:id", func(c *fiber.Ctx) error {
+		// Check for a session
+		sess, err := store.Get(c)
+		if err != nil {
+			return c.SendStatus(fiber.StatusInternalServerError)
+		}
+
+		// Only admins can update thingamabobs
+		if v, ok := sess.Get("loggedIn").(bool); !ok || !v {
+			// Return a 401 status
+			return c.SendStatus(fiber.StatusUnauthorized)
+		}
+
+		// Check for admin role
+		if roles, ok := sess.Get("roles").([]string); !ok || !contains(roles, "admin") {
+			// Return a 401 status
+			return c.SendStatus(fiber.StatusUnauthorized)
+		}
+
+		// Check for id param
+		paramID := c.Params("id")
+
+		// If the id param is not set, return an error
+		if paramID == "" {
+			return c.SendStatus(fiber.StatusBadRequest)
+		}
+
+		// Update the thingamabob
+		if id, err := strconv.Atoi(paramID); err != nil {
+			return c.SendStatus(fiber.StatusBadRequest)
+		} else if thingamabob, ok := thingamabobDB[id]; ok {
+			type request struct {
+				Name string `json:"name"`
+			}
+
+			// Parse body into request struct
+			var body request
+			if err := c.BodyParser(&body); err != nil {
+				return c.SendStatus(fiber.StatusBadRequest)
+			}
+
+			thingamabob.Name = body.Name
+			thingamabobDB[id] = thingamabob
+
+			return c.JSON(fiber.Map{
+				"id":   id,
+				"name": body.Name,
+			})
+		}
+
+		return c.SendStatus(fiber.StatusNotFound)
+	})
+
 	app.Delete("/api/thingamabob/:id", func(c *fiber.Ctx) error {
 		// Check for a session
 		sess, err := store.Get(c)
