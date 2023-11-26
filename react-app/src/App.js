@@ -1,47 +1,163 @@
 import Cookies from 'js-cookie';
 import './App.css';
-import React, { useState, useEffect, createContext, useContext, useCallback } from 'react';
+import SessionTimeoutAlert from './SessionTimeoutAlert';
+import React, { useRef, useState, useEffect, createContext, useContext, useCallback } from 'react';
 
-const UserContext = createContext();
+const AuthContext = createContext();
 
-const apiRequest = async (url, options) => {
-  const csrfToken = Cookies.get('csrf_');
-  const response = await fetch(url, {
-    ...options,
-    headers: {
-      ...options.headers,
-      'X-CSRF-Token': csrfToken,
-    },
-  });
+// Create a provider component for the AuthContext
+const AuthProvider = ({ children }) => {
+  const [username, setUsername] = useState('');
+  const [loggedIn, setLoggedIn] = useState(false);
+  const [userRoles, setUserRoles] = useState([]);
+  const [sessionTimeout, setSessionTimeout] = useState(3600);
+  const [extendSessionTrigger, setExtendSessionTrigger] = useState(0); // This is used to trigger the session timeout alert to extend the session
+  const [lastApiRequest, setLastApiRequest] = useState(Date.now());
 
-  // TODO: Check if the status code is 401 (Unauthorized) and Call checkAuthentication again
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const apiRequest = async (url, options, csrfRefreshed = false) => {
+    const csrfToken = Cookies.get('csrf_');
 
-  if (!response.ok) {
-    throw new Error(`Request failed: ${response.statusText}`);
+    const response = await fetch(url, {
+      ...options,
+      headers: {
+        ...options.headers,
+        'X-CSRF-Token': csrfToken,
+      },
+    });
+
+    // Check if the response status code is 403 (Forbidden)
+    // This will happen if the CSRF token is invalid or missing
+    if (response.status === 403) {
+      if (csrfRefreshed) {
+        checkAuthentication();
+        return null;
+      }
+
+      // Call the /api endpoint ('Hello World' endpoint) with the GET method
+      // This will set a new CSRF cookie
+      await fetch('/api', { method: 'GET' });
+
+      // Call the apiRequest function again with the same parameters
+      return apiRequest(url, options, true);
+    }
+
+    // Check if the status code is 401 (Unauthorized) and Call checkAuthentication again
+    // unless checking the api/auth/status endpoint, to avoid an infinite loop
+    if (response.status === 401 && url !== '/api/auth/status') {
+      checkAuthentication(); // This will, most likely, set loggedIn to false
+      return null; // Return null so the caller knows the request failed
+    }
+
+    if (!response.ok) {
+      throw new Error(`Request failed: ${response.statusText}`);
+    }
+
+    // If the request was successful, update the lastApiRequest time
+    setLastApiRequest(Date.now());
+
+    // Trigger the session timeout alert to extend the session
+    setExtendSessionTrigger(extendSessionTrigger + 1);
+
+    // If the response status is 204 (No Content), return null
+    if (response.status === 204) {
+      return null;
+    }
+
+    // Otherwise, parse the response body as JSON
+    return response.json();
+  };
+
+  const apiRequestRef = useRef(apiRequest);
+  apiRequestRef.current = apiRequest;
+
+  const logout = async () => {
+    try {
+      await apiRequest('/api/auth/logout', { method: 'POST' });
+      console.log('Logout successful');
+      setLoggedIn(false);
+      setUsername('');
+      setUserRoles([]);
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const checkAuthentication = useCallback(async () => {
+    try {
+      const statusData = await apiRequestRef.current('/api/auth/status', { method: 'GET' })
+      if (!statusData) {
+        // the user is not logged in
+        setLoggedIn(false);
+        setUsername('');
+        setUserRoles([]);
+        return;
+      }
+      setLoggedIn(statusData.loggedIn);
+      setUsername(statusData.username || '');
+      setUserRoles(statusData.roles || []);
+      setSessionTimeout(statusData.sessionTimeout || 3600);
+    } catch (error) {
+      console.error(error);
+      setLoggedIn(false);
+      setUsername('');
+      setUserRoles([]);
+    }
+  }, [apiRequestRef, setUsername, setLoggedIn, setUserRoles]);
+
+  const checkAuthenticationRef = useRef(checkAuthentication);
+  checkAuthenticationRef.current = checkAuthentication;
+
+  // Check authentication when the component mounts
+  useEffect(() => {
+    checkAuthenticationRef.current();
   }
+    , []);
 
-  // If the response status is 204 (No Content), return null
-  if (response.status === 204) {
-    return null;
-  }
+  // when loggedIn changes to true, set a timer to check authentication again in 60 minutes
+  // which is the default session timeout for the backend, so it should be slightly more than that.
+  // Otherwise, checking this would extend the session indefinitely.
+  useEffect(() => {
+    if (loggedIn) {
+      // Check to see if the session timeout is less than or equal to 0
+      if (sessionTimeout <= 0) {
+        return;
+      }
+      // Set a timer to check authentication again after the session timeout
+      // Add 1 second to ensure that we do not extend the session indefinitely
+      // TODO: this check could cause issues if a user had multiple tabs open
+      // as a tab with a session timeout below the actual session timeout would
+      // extend the session when this timer runs.
+      const timeoutId = setTimeout(checkAuthentication, sessionTimeout * 1000 + 1000);
+      return () => clearTimeout(timeoutId);
+    }
+  }, [loggedIn, checkAuthentication, lastApiRequest, sessionTimeout]); // Include lastApiRequest in the dependencies
 
-  // Otherwise, parse the response body as JSON
-  return response.json();
+  return (
+    <AuthContext.Provider value={{ username, loggedIn, userRoles, logout, apiRequest, setLoggedIn, setUsername, setUserRoles, checkAuthentication, sessionTimeout, setSessionTimeout, extendSessionTrigger, setExtendSessionTrigger }}>
+      <SessionTimeoutAlert loggedIn={loggedIn} logout={logout} checkAuthentication={checkAuthentication} sessionTimeout={sessionTimeout} setLoggedIn={setLoggedIn} extendSessionTrigger={extendSessionTrigger} />
+      {children}
+    </AuthContext.Provider>
+  );
 };
 
 function AuthorizedContent() {
-  const { username, setUsername, userRoles, setUserRoles, setLoggedIn } = useContext(UserContext);
+  const { username, userRoles, apiRequest, logout } = useContext(AuthContext);
   const [thingamabobs, setThingamabobs] = useState([]);
+
+  const apiRequestRef = useRef(apiRequest);
+  apiRequestRef.current = apiRequest;
 
   const getThingamabobs = useCallback(async () => {
     try {
-      const data = await apiRequest('/api/thingamabob', { method: 'GET' });
+      const data = await apiRequestRef.current('/api/thingamabob', { method: 'GET' });
       setThingamabobs(data);
     } catch (error) {
       console.error(error);
     }
   }, [setThingamabobs]);
 
+  // Get thingamabobs when the component mounts
   useEffect(() => {
     getThingamabobs();
   }, [getThingamabobs]);
@@ -49,16 +165,7 @@ function AuthorizedContent() {
   const handleLogout = async (e) => {
     e.preventDefault();
 
-    try {
-      await apiRequest('/api/auth/logout', { method: 'POST' });
-
-      const statusData = await apiRequest('/api/auth/status', { method: 'GET' });
-      setLoggedIn(statusData.loggedIn);
-      setUsername(statusData.username || '');
-      setUserRoles(statusData.roles || []);
-    } catch (error) {
-      console.error(error);
-    }
+    logout();
   };
 
   const handleAddThingamabob = async (e, { name }) => {
@@ -100,7 +207,7 @@ function AuthorizedContent() {
           <li key={thingamabob.id}>
             {thingamabob.name}
             {userRoles.includes('admin') && (
-              <button className="danger ml-1" onClick={() => {handleDeleteThingamabob(thingamabob.id)}}>Delete</button>
+              <button className="danger ml-1" onClick={() => { handleDeleteThingamabob(thingamabob.id) }}>Delete</button>
             )}
           </li>
         ))}
@@ -110,7 +217,7 @@ function AuthorizedContent() {
           <h3>Add Thingamabob</h3>
           <form onSubmit={(e) => handleAddThingamabob(e, { name: e.target.name.value })}>
             <label>Name:</label>
-            <input type="text" name="name" placeholder='Thingamabob #'/>
+            <input type="text" name="name" placeholder='Thingamabob #' />
             <button type="submit">Add Thingamabob</button>
           </form>
         </div>
@@ -125,21 +232,23 @@ function LoginPage() {
   const [fromUsername, setFromUsername] = useState('');
   const [formPassword, setFormPassword] = useState('');
   const [error, setError] = useState('');
-  const { setUsername, setLoggedIn, setUserRoles } = useContext(UserContext);
+  const { setSessionTimeout, setUsername, setLoggedIn, setUserRoles, apiRequest } = useContext(AuthContext);
 
   const handleLogin = async (e) => {
     e.preventDefault();
-
+  
     try {
-      const data = await apiRequest('/api/auth/login', {
+      const { loggedIn, username, roles, sessionTimeout } = await apiRequest('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username: fromUsername, password: formPassword }),
       });
-
-      setLoggedIn(data.loggedIn);
-      setUsername(data.username);
-      setUserRoles(data.roles);
+  
+      setLoggedIn(loggedIn);
+      setUsername(username);
+      setUserRoles(roles);
+      setSessionTimeout(sessionTimeout || 3600);
+      setError(''); // Clear the error state on successful login
       console.log('Login successful');
     } catch (error) {
       console.error(error);
@@ -177,35 +286,21 @@ function LoginPage() {
 }
 
 function App() {
-  const [username, setUsername] = useState('');
-  const [loggedIn, setLoggedIn] = useState(false);
-  const [userRoles, setUserRoles] = useState([]);
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
+  );
+}
 
-  const checkAuthentication = useCallback(async () => {
-    try {
-      const statusData = await apiRequest('/api/auth/status', { method: 'GET' });
-      setLoggedIn(statusData.loggedIn);
-      setUsername(statusData.username || '');
-      setUserRoles(statusData.roles || []);
-    } catch (error) {
-      console.error(error);
-      setLoggedIn(false);
-      setUsername('');
-      setUserRoles([]);
-    }
-  }, [setUsername, setLoggedIn, setUserRoles]);
-
-  useEffect(() => {
-    checkAuthentication();
-  }, [checkAuthentication]);
+function AppContent() {
+  const { loggedIn } = useContext(AuthContext); // Access the loggedIn state
 
   return (
-    <UserContext.Provider value={{ username, setUsername, userRoles, setUserRoles, loggedIn, setLoggedIn }}>
-      <div className="main-content">
-        <h1>Example React Frontend</h1>
-        {loggedIn ? <AuthorizedContent /> : <LoginPage />}
-      </div>
-    </UserContext.Provider>
+    <div className="main-content">
+      <h1>Example React Frontend</h1>
+      {loggedIn ? <AuthorizedContent /> : <LoginPage />}
+    </div>
   );
 }
 

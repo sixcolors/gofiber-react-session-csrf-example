@@ -10,14 +10,15 @@ It still needs the following:
 
 - [x] Docker compose for development (see [docker-compose.yml](docker-compose.yml))
 - [x] React Dev Tools do not work with the proxy, fix
-- [x] Go Delve remote debugger (see [launch.json](.vscode/launch.json)) `Docker: Attach to Go (Delve)` config for debugging the backend in VSCode.
-- [x] React debugging (see [launch.json](.vscode/launch.json)) `Launch Chrome against localhost` config for debugging the frontend in VSCode.
+- [x] Go Delve remote debugger (see [launch.json](.vscode/launch.json)) `Docker: Attach to Go (Delve)` config for debugging the backend in VSCode
+- [x] React debugging (see [launch.json](.vscode/launch.json)) `Launch Chrome against localhost` config for debugging the frontend in VSCode
 - [ ] Seperate frontend and backend docker containers
 - [ ] SECURE Dockerfiles (ie dont run as root etc)
 - [ ] Secure handling of login credentials in the backend
-- [ ] Timeouts on the frontend
-- [ ] Mechanism to refresh auth status on the frontend (if auth error happens, or the user does something that changes their auth status)
-- [ ] Some browsers (Safari) will not offer to save passwords when using fetch and require a page load to trigger the save password dialog, fix.
+- [x] Timeouts on the frontend
+- [x] Mechanism to refresh auth status on the frontend (if auth error happens, or the user does something that changes their auth status)
+- [x] TODO: session timeout in the front end with multiple tabs open could cause the session to be extended indefinitely, fix
+- [ ] Some browsers (Safari) will not offer to save passwords when using fetch and require a page load to trigger the save password dialog, fix
 
 
 ## Development
@@ -71,7 +72,8 @@ response:
 {
     "loggedIn": true,
     "username": "admin",
-    "roles": ["admin", "user"]
+    "roles": ["admin", "user"],
+    "timeout": 3600 // seconds
 }
 ```
 

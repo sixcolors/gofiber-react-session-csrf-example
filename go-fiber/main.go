@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/csrf"
@@ -26,6 +27,10 @@ type User struct {
 type Thingamabob struct {
 	Name string `json:"name"`
 }
+
+const (
+	sessionTimeout = time.Hour
+)
 
 var (
 	ErrRedisConnStr = errors.New("invalid Redis connection string")
@@ -64,6 +69,7 @@ func main() {
 		CookieSecure:   false, // Set to true in production
 		CookieHTTPOnly: false, // To allow JS to read the CSRF cookie
 		Session:        store,
+		Expiration:     sessionTimeout,
 	}
 
 	app.Use(csrf.New(csrfConfig))
@@ -79,7 +85,9 @@ func main() {
 	setupThingamabobRoutes(app, store)
 
 	// Start the Fiber app
-	_ = app.Listen(":3001")
+	if err := app.Listen(":3001"); err != nil {
+		log.Fatal(err)
+	}
 }
 
 func createSessionStore() *session.Store {
@@ -114,7 +122,8 @@ func createRedisSessionStore(redisConnStr string) *session.Store {
 	})
 
 	return session.New(session.Config{
-		Storage: storage,
+		Storage:    storage,
+		Expiration: sessionTimeout,
 	})
 }
 
@@ -157,9 +166,10 @@ func handleLogin(store *session.Store) fiber.Handler {
 				}
 
 				return c.JSON(fiber.Map{
-					"loggedIn": true,
-					"username": body.Username,
-					"roles":    user.Roles,
+					"loggedIn":       true,
+					"username":       body.Username,
+					"roles":          user.Roles,
+					"sessionTimeout": sessionTimeout.Seconds(),
 				})
 			}
 		}
@@ -208,9 +218,10 @@ func handleAuthStatus(store *session.Store) fiber.Handler {
 		roles := sess.Get("roles")
 
 		return c.JSON(fiber.Map{
-			"loggedIn": true,
-			"username": username,
-			"roles":    roles,
+			"loggedIn":       true,
+			"username":       username,
+			"roles":          roles,
+			"sessionTimeout": sessionTimeout.Seconds(),
 		})
 	}
 }
