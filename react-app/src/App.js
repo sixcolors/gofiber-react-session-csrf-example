@@ -236,14 +236,14 @@ function LoginPage() {
 
   const handleLogin = async (e) => {
     e.preventDefault();
-  
+
     try {
       const { loggedIn, username, roles, sessionTimeout } = await apiRequest('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username: fromUsername, password: formPassword }),
       });
-  
+
       setLoggedIn(loggedIn);
       setUsername(username);
       setUserRoles(roles);

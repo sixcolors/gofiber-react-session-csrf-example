@@ -1,11 +1,16 @@
 import React, { useRef, useState, useEffect } from 'react';
 
+// Constants
+const SESSION_TIMEOUT_WARNING_THRESHOLD = 60;
+const MILLISECONDS_IN_SECOND = 1000;
+
 function SessionTimeoutAlert({ loggedIn, logout, checkAuthentication, setLoggedIn, sessionTimeout, extendSessionTrigger }) {
   const [showAlert, setShowAlert] = useState(false);
-  const [timeLeft, setTimeLeft] = useState(60);
+  const [timeLeft, setTimeLeft] = useState(SESSION_TIMEOUT_WARNING_THRESHOLD);
 
   const alertRef = useRef();
   const timeoutIdRef = useRef();
+  const intervalIdRef = useRef();
 
   const handleClickOutside = (event) => {
     if (alertRef.current && !alertRef.current.contains(event.target)) {
@@ -18,16 +23,15 @@ function SessionTimeoutAlert({ loggedIn, logout, checkAuthentication, setLoggedI
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
       clearTimeout(timeoutIdRef.current);
+      clearInterval(intervalIdRef.current);
     };
   }, []);
-
-  
 
   useEffect(() => {
     if (loggedIn) {
       if (timeoutIdRef.current) clearTimeout(timeoutIdRef.current);
       setShowAlert(false);
-      timeoutIdRef.current = setTimeout(() => setShowAlert(true), Math.max((sessionTimeout - 60) * 1000, 500));
+      timeoutIdRef.current = setTimeout(() => setShowAlert(true), Math.max((sessionTimeout - SESSION_TIMEOUT_WARNING_THRESHOLD) * MILLISECONDS_IN_SECOND, 500));
     } else {
       setShowAlert(false);
     }
@@ -36,10 +40,8 @@ function SessionTimeoutAlert({ loggedIn, logout, checkAuthentication, setLoggedI
   }, [loggedIn, sessionTimeout, extendSessionTrigger]);
 
   useEffect(() => {
-    let intervalId;
-
     if (showAlert) {
-      intervalId = setInterval(() => {
+      intervalIdRef.current = setInterval(() => {
         setTimeLeft((prevTimeLeft) => {
           const newTimeLeft = prevTimeLeft - 1;
 
@@ -50,12 +52,12 @@ function SessionTimeoutAlert({ loggedIn, logout, checkAuthentication, setLoggedI
 
           return newTimeLeft;
         });
-      }, 1000);
+      }, MILLISECONDS_IN_SECOND);
     }
 
     return () => {
-      clearInterval(intervalId);
-      setTimeLeft(60);
+      clearInterval(intervalIdRef.current);
+      setTimeLeft(Math.min(SESSION_TIMEOUT_WARNING_THRESHOLD, sessionTimeout));
     };
   }, [showAlert, sessionTimeout]);
 
