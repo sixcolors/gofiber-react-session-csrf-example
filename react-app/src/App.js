@@ -3,6 +3,14 @@ import './App.css';
 import SessionTimeoutAlert from './SessionTimeoutAlert';
 import React, { useRef, useState, useEffect, createContext, useContext, useCallback } from 'react';
 
+// Constants
+const DEFAULT_SESSION_TIMEOUT = 3600;
+const MILLISECONDS_IN_SECOND = 1000;
+const API_AUTH_LOGIN = '/api/auth/login';
+const API_AUTH_LOGOUT = '/api/auth/logout';
+const API_AUTH_STATUS = '/api/auth/status';
+const API_THINGAMABOB = '/api/thingamabob';
+
 const AuthContext = createContext();
 
 // Create a provider component for the AuthContext
@@ -10,7 +18,7 @@ const AuthProvider = ({ children }) => {
   const [username, setUsername] = useState('');
   const [loggedIn, setLoggedIn] = useState(false);
   const [userRoles, setUserRoles] = useState([]);
-  const [sessionTimeout, setSessionTimeout] = useState(3600);
+  const [sessionTimeout, setSessionTimeout] = useState(DEFAULT_SESSION_TIMEOUT);
   const [extendSessionTrigger, setExtendSessionTrigger] = useState(0); // This is used to trigger the session timeout alert to extend the session
   const [lastApiRequest, setLastApiRequest] = useState(Date.now());
 
@@ -43,8 +51,8 @@ const AuthProvider = ({ children }) => {
     }
 
     // Check if the status code is 401 (Unauthorized) and Call checkAuthentication again
-    // unless checking the api/auth/status endpoint, to avoid an infinite loop
-    if (response.status === 401 && url !== '/api/auth/status') {
+    // unless checking the API_AUTH_STATUS endpoint, to avoid an infinite loop
+    if (response.status === 401 && url !== API_AUTH_STATUS) {
       checkAuthentication(); // This will, most likely, set loggedIn to false
       return null; // Return null so the caller knows the request failed
     }
@@ -73,7 +81,7 @@ const AuthProvider = ({ children }) => {
 
   const logout = async () => {
     try {
-      await apiRequest('/api/auth/logout', { method: 'POST' });
+      await apiRequest(API_AUTH_LOGOUT, { method: 'POST' });
       console.log('Logout successful');
       setLoggedIn(false);
       setUsername('');
@@ -85,7 +93,7 @@ const AuthProvider = ({ children }) => {
 
   const checkAuthentication = useCallback(async () => {
     try {
-      const statusData = await apiRequestRef.current('/api/auth/status', { method: 'GET' })
+      const statusData = await apiRequestRef.current(API_AUTH_STATUS, { method: 'GET' })
       if (!statusData) {
         // the user is not logged in
         setLoggedIn(false);
@@ -96,7 +104,7 @@ const AuthProvider = ({ children }) => {
       setLoggedIn(statusData.loggedIn);
       setUsername(statusData.username || '');
       setUserRoles(statusData.roles || []);
-      setSessionTimeout(statusData.sessionTimeout || 3600);
+      setSessionTimeout(statusData.sessionTimeout || DEFAULT_SESSION_TIMEOUT);
     } catch (error) {
       console.error(error);
       setLoggedIn(false);
@@ -128,7 +136,7 @@ const AuthProvider = ({ children }) => {
       // TODO: this check could cause issues if a user had multiple tabs open
       // as a tab with a session timeout below the actual session timeout would
       // extend the session when this timer runs.
-      const timeoutId = setTimeout(checkAuthentication, sessionTimeout * 1000 + 1000);
+      const timeoutId = setTimeout(checkAuthentication, sessionTimeout * MILLISECONDS_IN_SECOND + 1000);
       return () => clearTimeout(timeoutId);
     }
   }, [loggedIn, checkAuthentication, lastApiRequest, sessionTimeout]); // Include lastApiRequest in the dependencies
@@ -150,7 +158,7 @@ function AuthorizedContent() {
 
   const getThingamabobs = useCallback(async () => {
     try {
-      const data = await apiRequestRef.current('/api/thingamabob', { method: 'GET' });
+      const data = await apiRequestRef.current(API_THINGAMABOB, { method: 'GET' });
       setThingamabobs(data);
     } catch (error) {
       console.error(error);
@@ -172,7 +180,7 @@ function AuthorizedContent() {
     e.preventDefault();
 
     try {
-      const data = await apiRequest('/api/thingamabob', {
+      const data = await apiRequest(API_THINGAMABOB, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name }),
@@ -188,7 +196,11 @@ function AuthorizedContent() {
 
   const handleDeleteThingamabob = async (id) => {
     try {
-      await apiRequest(`/api/thingamabob/${id}`, { method: 'DELETE' });
+      if (!Number.isInteger(id)) {
+        throw new Error('Invalid id');
+      }
+
+      await apiRequest(`${API_THINGAMABOB}/${id}`, { method: 'DELETE' });
       setThingamabobs(thingamabobs.filter(thingamabob => thingamabob.id !== id));
     } catch (error) {
       alert(error.message);
@@ -238,7 +250,7 @@ function LoginPage() {
     e.preventDefault();
 
     try {
-      const { loggedIn, username, roles, sessionTimeout } = await apiRequest('/api/auth/login', {
+      const { loggedIn, username, roles, sessionTimeout } = await apiRequest(API_AUTH_LOGIN, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username: fromUsername, password: formPassword }),
@@ -247,7 +259,7 @@ function LoginPage() {
       setLoggedIn(loggedIn);
       setUsername(username);
       setUserRoles(roles);
-      setSessionTimeout(sessionTimeout || 3600);
+      setSessionTimeout(sessionTimeout || DEFAULT_SESSION_TIMEOUT);
       setError(''); // Clear the error state on successful login
       console.log('Login successful');
     } catch (error) {
