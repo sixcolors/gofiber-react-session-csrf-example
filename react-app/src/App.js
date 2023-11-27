@@ -130,31 +130,38 @@ const AuthProvider = ({ children }) => {
   useEffect(() => {
     let timeoutId;
 
+    const setAuthenticationTimeout = (lastApiRequestDate) => {
+      const now = Date.now();
+      const timeSinceLastApiRequest = now - lastApiRequestDate;
+
+      if (timeSinceLastApiRequest < sessionTimeout * MILLISECONDS_IN_SECOND) {
+        // If a timer is already running, clear it
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+        }
+
+        // Set a new timer to check the authentication status after the remaining time, plus 1 second
+        const remainingTime = sessionTimeout * MILLISECONDS_IN_SECOND - timeSinceLastApiRequest + 1 * MILLISECONDS_IN_SECOND;
+        timeoutId = setTimeout(() => {
+          checkAuthenticationRef.current();
+        }, remainingTime);
+      }
+    }
+
     const handleStorageChange = (e) => {
       if (e.key === LAST_API_REQUEST_DATE) {
         // Trigger the SessionTimeoutAlert when the lastApiRequestDate changes
         setExtendSessionTrigger(extendSessionTrigger + 1);
 
         const lastApiRequestDate = parseInt(e.newValue);
-        const now = Date.now();
-        const timeSinceLastApiRequest = now - lastApiRequestDate;
-
-        if (timeSinceLastApiRequest < sessionTimeout * MILLISECONDS_IN_SECOND) {
-          // If a timer is already running, clear it
-          if (timeoutId) {
-            clearTimeout(timeoutId);
-          }
-
-          // Set a new timer to check the authentication status after the remaining time, plus 1 second
-          const remainingTime = sessionTimeout * MILLISECONDS_IN_SECOND - timeSinceLastApiRequest + 1 * MILLISECONDS_IN_SECOND;
-          timeoutId = setTimeout(() => {
-            checkAuthenticationRef.current();
-          }, remainingTime);
-        }
+        setAuthenticationTimeout(lastApiRequestDate);
       }
     }
 
     window.addEventListener('storage', handleStorageChange);
+
+    const lastApiRequestDate = parseInt(localStorage.getItem(LAST_API_REQUEST_DATE));
+    setAuthenticationTimeout(lastApiRequestDate);
 
     return () => {
       window.removeEventListener('storage', handleStorageChange);
