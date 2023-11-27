@@ -73,7 +73,7 @@ response:
     "loggedIn": true,
     "username": "admin",
     "roles": ["admin", "user"],
-    "timeout": 3600 // seconds
+    "sessionTimeout": 3600 // seconds
 }
 ```
 
@@ -98,7 +98,8 @@ response:
 {
   "loggedIn": true,
   "username": "admin",
-  "roles": ["admin", "user"]
+  "roles": ["admin", "user"],
+  "sessionTimeout": 3600 // seconds
 }
 ```
 
