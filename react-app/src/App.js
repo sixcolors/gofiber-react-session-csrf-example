@@ -10,6 +10,7 @@ const API_AUTH_LOGIN = '/api/auth/login';
 const API_AUTH_LOGOUT = '/api/auth/logout';
 const API_AUTH_STATUS = '/api/auth/status';
 const API_THINGAMABOB = '/api/thingamabob';
+const LAST_API_REQUEST_DATE = 'lastApiRequestDate';
 
 const AuthContext = createContext();
 
@@ -19,11 +20,13 @@ const AuthProvider = ({ children }) => {
   const [loggedIn, setLoggedIn] = useState(false);
   const [userRoles, setUserRoles] = useState([]);
   const [sessionTimeout, setSessionTimeout] = useState(DEFAULT_SESSION_TIMEOUT);
-  const [extendSessionTrigger, setExtendSessionTrigger] = useState(0); // This is used to trigger the session timeout alert to extend the session
-  const [lastApiRequest, setLastApiRequest] = useState(Date.now());
+  const [extendSessionTrigger, setExtendSessionTrigger] = useState(0);
+
+  const checkAuthenticationRef = useRef();
+  const apiRequestRef = useRef();
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const apiRequest = async (url, options, csrfRefreshed = false) => {
+  const apiRequest = useCallback(async (url, options, csrfRefreshed = false) => {
     const csrfToken = Cookies.get('csrf_');
 
     const response = await fetch(url, {
@@ -38,7 +41,7 @@ const AuthProvider = ({ children }) => {
     // This will happen if the CSRF token is invalid or missing
     if (response.status === 403) {
       if (csrfRefreshed) {
-        checkAuthentication();
+        checkAuthenticationRef.current();
         return null;
       }
 
@@ -53,7 +56,7 @@ const AuthProvider = ({ children }) => {
     // Check if the status code is 401 (Unauthorized) and Call checkAuthentication again
     // unless checking the API_AUTH_STATUS endpoint, to avoid an infinite loop
     if (response.status === 401 && url !== API_AUTH_STATUS) {
-      checkAuthentication(); // This will, most likely, set loggedIn to false
+      checkAuthenticationRef.current(); // This will, most likely, set loggedIn to false
       return null; // Return null so the caller knows the request failed
     }
 
@@ -61,8 +64,8 @@ const AuthProvider = ({ children }) => {
       throw new Error(`Request failed: ${response.statusText}`);
     }
 
-    // If the request was successful, update the lastApiRequest time
-    setLastApiRequest(Date.now());
+    // Store the current date and time in the local storage
+    localStorage.setItem(LAST_API_REQUEST_DATE, Date.now());
 
     // Trigger the session timeout alert to extend the session
     setExtendSessionTrigger(extendSessionTrigger + 1);
@@ -74,12 +77,9 @@ const AuthProvider = ({ children }) => {
 
     // Otherwise, parse the response body as JSON
     return response.json();
-  };
+  }, [extendSessionTrigger]);
 
-  const apiRequestRef = useRef(apiRequest);
-  apiRequestRef.current = apiRequest;
-
-  const logout = async () => {
+  const logout = useCallback(async () => {
     try {
       await apiRequest(API_AUTH_LOGOUT, { method: 'POST' });
       console.log('Logout successful');
@@ -89,7 +89,7 @@ const AuthProvider = ({ children }) => {
     } catch (error) {
       console.error(error);
     }
-  };
+  }, [apiRequest, setLoggedIn, setUsername, setUserRoles]);
 
   const checkAuthentication = useCallback(async () => {
     try {
@@ -113,8 +113,13 @@ const AuthProvider = ({ children }) => {
     }
   }, [apiRequestRef, setUsername, setLoggedIn, setUserRoles]);
 
-  const checkAuthenticationRef = useRef(checkAuthentication);
-  checkAuthenticationRef.current = checkAuthentication;
+  useEffect(() => {
+    checkAuthenticationRef.current = checkAuthentication;
+  }, [checkAuthentication]);
+
+  useEffect(() => {
+    apiRequestRef.current = apiRequest;
+  }, [apiRequest]);
 
   // Check authentication when the component mounts
   useEffect(() => {
@@ -122,24 +127,45 @@ const AuthProvider = ({ children }) => {
   }
     , []);
 
-  // when loggedIn changes to true, set a timer to check authentication again in 60 minutes
-  // which is the default session timeout for the backend, so it should be slightly more than that.
-  // Otherwise, checking this would extend the session indefinitely.
   useEffect(() => {
-    if (loggedIn) {
-      // Check to see if the session timeout is less than or equal to 0
-      if (sessionTimeout <= 0) {
-        return;
+    let timeoutId;
+
+    const handleStorageChange = (e) => {
+      if (e.key === LAST_API_REQUEST_DATE) {
+        // Trigger the SessionTimeoutAlert when the lastApiRequestDate changes
+        setExtendSessionTrigger(extendSessionTrigger + 1);
+
+        const lastApiRequestDate = parseInt(e.newValue);
+        const now = Date.now();
+        const timeSinceLastApiRequest = now - lastApiRequestDate;
+
+        if (timeSinceLastApiRequest < sessionTimeout * MILLISECONDS_IN_SECOND) {
+          // If a timer is already running, clear it
+          if (timeoutId) {
+            clearTimeout(timeoutId);
+          }
+
+          // Set a new timer to check the authentication status after the remaining time, plus 1 second
+          const remainingTime = sessionTimeout * MILLISECONDS_IN_SECOND - timeSinceLastApiRequest + 1 * MILLISECONDS_IN_SECOND;
+          timeoutId = setTimeout(() => {
+            checkAuthenticationRef.current();
+          }, remainingTime);
+        }
       }
-      // Set a timer to check authentication again after the session timeout
-      // Add 1 second to ensure that we do not extend the session indefinitely
-      // TODO: this check could cause issues if a user had multiple tabs open
-      // as a tab with a session timeout below the actual session timeout would
-      // extend the session when this timer runs.
-      const timeoutId = setTimeout(checkAuthentication, sessionTimeout * MILLISECONDS_IN_SECOND + 1000);
-      return () => clearTimeout(timeoutId);
     }
-  }, [loggedIn, checkAuthentication, lastApiRequest, sessionTimeout]); // Include lastApiRequest in the dependencies
+
+    window.addEventListener('storage', handleStorageChange);
+
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+
+      // Clear the timer when the component unmounts
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+    };
+  }, [sessionTimeout, extendSessionTrigger, checkAuthenticationRef]);
+
 
   return (
     <AuthContext.Provider value={{ username, loggedIn, userRoles, logout, apiRequest, setLoggedIn, setUsername, setUserRoles, checkAuthentication, sessionTimeout, setSessionTimeout, extendSessionTrigger, setExtendSessionTrigger }}>

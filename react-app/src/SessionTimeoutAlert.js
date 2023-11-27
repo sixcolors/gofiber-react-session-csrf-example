@@ -4,7 +4,7 @@ import React, { useRef, useState, useEffect } from 'react';
 const SESSION_TIMEOUT_WARNING_THRESHOLD = 60;
 const MILLISECONDS_IN_SECOND = 1000;
 
-function SessionTimeoutAlert({ loggedIn, logout, checkAuthentication, setLoggedIn, sessionTimeout, extendSessionTrigger }) {
+function SessionTimeoutAlert({ loggedIn, logout, checkAuthentication, sessionTimeout, extendSessionTrigger }) {
   const [showAlert, setShowAlert] = useState(false);
   const [timeLeft, setTimeLeft] = useState(SESSION_TIMEOUT_WARNING_THRESHOLD);
 
