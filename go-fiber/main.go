@@ -29,7 +29,7 @@ type Thingamabob struct {
 }
 
 const (
-	sessionTimeout = time.Minute
+	sessionTimeout = time.Hour
 )
 
 var (
