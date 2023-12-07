@@ -2,6 +2,8 @@
 
 This is an example of a GoFiber backend with a React frontend that uses sessions and CSRF tokens.
 
+Inspired by https://redis.com/blog/json-web-tokens-jwt-are-dangerous-for-user-sessions/ and developer questions about such a use case on the GoFiber discord server. 
+
 It uses an nginx reverse proxy to serve the frontend and backend on the same port. The backend is served on `/api` and the frontend is served on `/`.
 
 This example is not complete and therefore should not be used in production.
