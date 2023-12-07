@@ -70,6 +70,13 @@ func main() {
 		CookieHTTPOnly: false, // To allow JS to read the CSRF cookie
 		Session:        store,
 		Expiration:     sessionTimeout,
+		ErrorHandler: func(c *fiber.Ctx, err error) error {
+			// Log the error
+			log.Println("CSRF Error:", err)
+
+			// Return a 403 Forbidden
+			return c.SendStatus(fiber.StatusForbidden)
+		},
 	}
 
 	app.Use(csrf.New(csrfConfig))

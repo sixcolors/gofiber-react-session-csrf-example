@@ -87,7 +87,7 @@ const AuthProvider = ({ children }) => {
       setUsername('');
       setUserRoles([]);
     } catch (error) {
-      console.error(error);
+      console.error('Logout failed:', error);
     }
   }, [apiRequest, setLoggedIn, setUsername, setUserRoles]);
 
@@ -106,7 +106,7 @@ const AuthProvider = ({ children }) => {
       setUserRoles(statusData.roles || []);
       setSessionTimeout(statusData.sessionTimeout || DEFAULT_SESSION_TIMEOUT);
     } catch (error) {
-      console.error(error);
+      console.error('Authentication check failed:', error);
       setLoggedIn(false);
       setUsername('');
       setUserRoles([]);
@@ -124,8 +124,7 @@ const AuthProvider = ({ children }) => {
   // Check authentication when the component mounts
   useEffect(() => {
     checkAuthenticationRef.current();
-  }
-    , []);
+  }, []);
 
   useEffect(() => {
     let timeoutId;
@@ -175,8 +174,31 @@ const AuthProvider = ({ children }) => {
 
 
   return (
-    <AuthContext.Provider value={{ username, loggedIn, userRoles, logout, apiRequest, setLoggedIn, setUsername, setUserRoles, checkAuthentication, sessionTimeout, setSessionTimeout, extendSessionTrigger, setExtendSessionTrigger }}>
-      <SessionTimeoutAlert loggedIn={loggedIn} logout={logout} checkAuthentication={checkAuthentication} sessionTimeout={sessionTimeout} setLoggedIn={setLoggedIn} extendSessionTrigger={extendSessionTrigger} />
+    <AuthContext.Provider
+      value={{
+        username,
+        loggedIn,
+        userRoles,
+        logout,
+        apiRequest,
+        setLoggedIn,
+        setUsername,
+        setUserRoles,
+        checkAuthentication,
+        sessionTimeout,
+        setSessionTimeout,
+        extendSessionTrigger,
+        setExtendSessionTrigger,
+      }}
+    >
+      <SessionTimeoutAlert
+        loggedIn={loggedIn}
+        logout={logout}
+        checkAuthentication={checkAuthentication}
+        sessionTimeout={sessionTimeout}
+        setLoggedIn={setLoggedIn}
+        extendSessionTrigger={extendSessionTrigger}
+      />
       {children}
     </AuthContext.Provider>
   );
