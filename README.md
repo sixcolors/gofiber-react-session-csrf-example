@@ -37,7 +37,7 @@ To support web socket based hot reloading of the frontend, Ngix is configured to
 
 Note: React Dev Tools require ENV `WDS_SOCKET_PORT` to be set to `8080` to work with the proxy, (see [react-app/Dockerfile.dev](react-app/Dockerfile.dev)).
 
-The backend will be restarted when changes are made to the backend code using [air](https://github.com/cosmtrek/air).
+The backend will be restarted when changes are made to the backend code using [air](github.com/air-verse/air).
 
 Go delve remote debugger will be available at [http://localhost:2345](http://localhost:2345) (see [launch.json](.vscode/launch.json)) `Docker: Attach to Go (Delve)` config for debugging the backend in VSCode.
 
