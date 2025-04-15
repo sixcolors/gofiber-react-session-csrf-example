@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"log"
+	"net"
 	"os"
 	"sort"
 	"strconv"
@@ -485,12 +486,37 @@ func parseRedisConnStr(connStr string) (host string, port int, db int, err error
 
 // getTrustedProxies returns a slice of trusted proxy IP addresses from environment variables
 func getTrustedProxies() []string {
-	// Get trusted proxies from environment variable
 	trustedProxiesEnv := os.Getenv("TRUSTED_PROXIES")
 	if trustedProxiesEnv == "" {
 		return []string{}
 	}
 
-	// Split by comma to get individual IP addresses
-	return strings.Split(trustedProxiesEnv, ",")
+	var proxies []string
+	for _, entry := range strings.Split(trustedProxiesEnv, ",") {
+		entry = strings.TrimSpace(entry)
+
+		// Check if it's a direct IP
+		if net.ParseIP(entry) != nil {
+			proxies = append(proxies, entry)
+			continue
+		}
+
+		// Check if it's a CIDR block
+		if _, _, err := net.ParseCIDR(entry); err == nil {
+			proxies = append(proxies, entry)
+			continue
+		}
+
+		// Otherwise try DNS lookup
+		addrs, err := net.LookupIP(entry)
+		if err != nil {
+			log.Println("Error looking up IP for proxy:", entry, err)
+			continue
+		}
+		for _, addr := range addrs {
+			proxies = append(proxies, addr.String())
+		}
+	}
+
+	return proxies
 }

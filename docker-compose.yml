@@ -44,7 +44,6 @@ services:
     build:
       context: ./nginx
       dockerfile: Dockerfile.dev
-    hostname: nginx-proxy
     ports:
       # - "443:443"  # HTTPS
       - "8080:8080"    # HTTP
