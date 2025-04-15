@@ -1,5 +1,7 @@
 # Example GoFiber Backend with React Frontend using Sessions and CSRF
 
+**Note:** This is an example has been updated to use the latest GoFiber v3 beta version. You can check the [v2](https://github.com/sixcolors/gofiber-react-session-csrf-example/tree/v2) branch for the a version that uses GoFiber v2.
+
 This is an example of a GoFiber backend with a React frontend that uses sessions and CSRF tokens.
 
 Inspired by https://redis.com/blog/json-web-tokens-jwt-are-dangerous-for-user-sessions/ and developer questions about such a use case on the GoFiber discord server. 
@@ -28,7 +30,7 @@ It still needs the following:
 A docker-compose file is provided for development. It will start the backend, frontend and a redis cache.
 
 ```bash
-docker-compose up
+docker compose up
 ```
 
 The server will be available at [http://localhost:8080](http://localhost:8080).
@@ -45,7 +47,7 @@ Go delve remote debugger will be available at [http://localhost:2345](http://loc
 
 ```bash
 docker build -t gofiber-react-session-csrf-example .
-docker run -p 8080:8080 gofiber-react-example
+docker run -p 8080:8080 gofiber-react-session-csrf-example
 ```
 
 The server will be available at [http://localhost:8080](http://localhost:8080).

@@ -1,7 +1,8 @@
 import Cookies from 'js-cookie';
 import './App.css';
 import SessionTimeoutAlert from './SessionTimeoutAlert';
-import React, { useRef, useState, useEffect, createContext, useContext, useCallback } from 'react';
+import React, { useRef, useState, useEffect, createContext, useContext, useCallback, useOptimistic, startTransition, useActionState } from 'react';
+import { useFormStatus } from 'react-dom';
 
 // Constants
 const DEFAULT_SESSION_TIMEOUT = 3600;
@@ -204,9 +205,32 @@ const AuthProvider = ({ children }) => {
   );
 };
 
+// Submit Button component with loading state
+function SubmitButton({ children }) {
+  const { pending } = useFormStatus();
+  return (
+    <button type="submit" disabled={pending} className={pending ? "loading" : ""}>
+      {pending ? 'Processing...' : children}
+    </button>
+  );
+}
+
 function AuthorizedContent() {
   const { username, userRoles, apiRequest, logout } = useContext(AuthContext);
   const [thingamabobs, setThingamabobs] = useState([]);
+  const [formError, setFormError] = useState(null);
+  
+  const [optimisticThingamabobs, updateOptimisticThingamabobs] = useOptimistic(
+    thingamabobs,
+    (state, action) => {
+      if (action.type === 'add') {
+        return [...state, action.item];
+      } else if (action.type === 'delete') {
+        return state.filter(item => item.id !== action.id);
+      }
+      return state;
+    }
+  );
 
   const apiRequestRef = useRef(apiRequest);
   apiRequestRef.current = apiRequest;
@@ -214,9 +238,11 @@ function AuthorizedContent() {
   const getThingamabobs = useCallback(async () => {
     try {
       const data = await apiRequestRef.current(API_THINGAMABOB, { method: 'GET' });
-      setThingamabobs(data);
+      setThingamabobs(data || []);
+      setFormError(null);
     } catch (error) {
       console.error(error);
+      setFormError("Failed to load thingamabobs");
     }
   }, [setThingamabobs]);
 
@@ -225,129 +251,190 @@ function AuthorizedContent() {
     getThingamabobs();
   }, [getThingamabobs]);
 
-  const handleLogout = async (e) => {
-    e.preventDefault();
-
-    logout();
-  };
-
-  const handleAddThingamabob = async (e, { name }) => {
-    e.preventDefault();
-
+  const handleAddThingamabob = async (_unusedActionState, formData) => {
     try {
+      const name = formData.get('name');
+      if (!name?.trim()) {
+        throw new Error("Name is required");
+      }
+      
+      // Optimistic UI update
+      const tempId = Date.now(); // Temporary ID for optimistic update
+      updateOptimisticThingamabobs({ 
+        type: 'add', 
+        item: { id: tempId, name, optimistic: true } 
+      });
+      
       const data = await apiRequest(API_THINGAMABOB, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name }),
       });
-
-      setThingamabobs([...thingamabobs, data]);
-      e.target.reset();
+      
+      // Update with real data from server
+      setThingamabobs(prev => [...prev, data]);
+      setFormError(null);
+      
+      // Return success for form reset
+      return { status: 'success' };
     } catch (error) {
-      alert(error.message);
+      setFormError(error.message);
       console.error(error);
+      return { status: 'error', message: error.message };
     }
   };
 
   const handleDeleteThingamabob = async (id) => {
     try {
-      if (!Number.isInteger(id)) {
-        throw new Error('Invalid id');
-      }
+      startTransition(() => {
+        setThingamabobs(current => current.filter(item => item.id !== id));
+        updateOptimisticThingamabobs({ type: 'delete', id });
+      });
 
       await apiRequest(`${API_THINGAMABOB}/${id}`, { method: 'DELETE' });
-      setThingamabobs(thingamabobs.filter(thingamabob => thingamabob.id !== id));
+      // No need to remove the item here again, it’s already removed above
     } catch (error) {
+      // Roll back by reloading data (so the item will reappear if deletion actually failed)
+      getThingamabobs();
       alert(error.message);
       console.error(error);
     }
   };
+
+  const [formState, formAction] = useActionState(handleAddThingamabob, { status: null });
 
   return (
     <div>
       <h2>Welcome, {username}!</h2>
       <p>User Roles: {userRoles?.join(', ')}</p>
       <hr />
+      
       <h3>Thingamabobs (Authorized Content)</h3>
-      <ul>
-        {thingamabobs.map(thingamabob => (
-          <li key={thingamabob.id}>
-            {thingamabob.name}
-            {userRoles.includes('admin') && (
-              <button className="danger ml-1" onClick={() => { handleDeleteThingamabob(thingamabob.id) }}>Delete</button>
-            )}
-          </li>
-        ))}
-      </ul>
+      {formError && <p className="error">{formError}</p>}
+      {formState?.status === 'error' && <p className="error">{formState.message}</p>}
+      
+      {optimisticThingamabobs.length === 0 ? (
+        <p>No thingamabobs found. Add one below!</p>
+      ) : (
+        <ul>
+          {optimisticThingamabobs.map(thingamabob => (
+            <li key={thingamabob.id} className={thingamabob.optimistic ? "optimistic" : ""}>
+              {thingamabob.name}
+              {userRoles.includes('admin') && !thingamabob.optimistic && (
+                <button 
+                  className="danger ml-1" 
+                  onClick={() => handleDeleteThingamabob(thingamabob.id)}
+                  aria-label={`Delete ${thingamabob.name}`}
+                >
+                  Delete
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      
       {userRoles.includes('admin') && (
         <div>
           <h3>Add Thingamabob</h3>
-          <form onSubmit={(e) => handleAddThingamabob(e, { name: e.target.name.value })}>
-            <label>Name:</label>
-            <input type="text" name="name" placeholder='Thingamabob #' />
-            <button type="submit">Add Thingamabob</button>
+          <form action={formAction}>
+            <div className="form-group">
+              <label htmlFor="thingName">Name:</label>
+              <input 
+                id="thingName" 
+                type="text" 
+                name="name" 
+                placeholder='Thingamabob #' 
+                required 
+                autoComplete="off"
+                aria-describedby="nameHelp"
+              />
+              <small id="nameHelp" className="form-text">Enter a name for your new thingamabob</small>
+            </div>
+            <SubmitButton>Add Thingamabob</SubmitButton>
           </form>
         </div>
       )}
+      
       <hr />
-      <button onClick={handleLogout}>Logout</button>
+      <button 
+        onClick={(e) => {
+          e.preventDefault();
+          logout();
+        }} 
+        className="logout-button"
+      >
+        Logout
+      </button>
     </div>
   );
 }
 
 function LoginPage() {
-  const [fromUsername, setFromUsername] = useState('');
-  const [formPassword, setFormPassword] = useState('');
   const [error, setError] = useState('');
   const { setSessionTimeout, setUsername, setLoggedIn, setUserRoles, apiRequest } = useContext(AuthContext);
 
-  const handleLogin = async (e) => {
-    e.preventDefault();
-
+  // Updated to useActionState
+  const [loginState, loginAction] = useActionState(async (_, formData) => {
     try {
-      const { loggedIn, username, roles, sessionTimeout } = await apiRequest(API_AUTH_LOGIN, {
+      const username = formData.get('username');
+      const password = formData.get('password');
+      
+      if (!username || !password) {
+        return { status: 'error', message: 'Username and password are required' };
+      }
+      
+      const { loggedIn, username: responseUsername, roles, sessionTimeout } = await apiRequest(API_AUTH_LOGIN, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: fromUsername, password: formPassword }),
+        body: JSON.stringify({ username, password }),
       });
 
       setLoggedIn(loggedIn);
-      setUsername(username);
+      setUsername(responseUsername);
       setUserRoles(roles);
       setSessionTimeout(sessionTimeout || DEFAULT_SESSION_TIMEOUT);
       setError(''); // Clear the error state on successful login
       console.log('Login successful');
+      return { status: 'success' };
     } catch (error) {
       console.error(error);
-      setError('Login failed');
+      return { status: 'error', message: 'Login failed' };
     }
-  };
+  }, { status: null });
 
   return (
     <div>
       <h2>Login Page</h2>
-      <form onSubmit={handleLogin}>
-        <div>
-          <label>Username:</label>
+      <form action={loginAction}>
+        <div className="form-group">
+          <label htmlFor="username">Username:</label>
           <input
+            id="username"
+            name="username"
             type="text"
-            value={fromUsername}
-            onChange={(e) => setFromUsername(e.target.value)}
+            required
+            autoComplete="username"
           />
         </div>
-        <div>
-          <label>Password:</label>
+        <div className="form-group">
+          <label htmlFor="password">Password:</label>
           <input
+            id="password"
+            name="password"
             type="password"
-            value={formPassword}
-            onChange={(e) => setFormPassword(e.target.value)}
+            required
+            autoComplete="current-password"
           />
         </div>
         <div>
-          <button type="submit">Login</button>
+          <SubmitButton>Login</SubmitButton>
         </div>
       </form>
-      {error && <p>{error}</p>}
+      {loginState?.status === 'error' && (
+        <p className="error">{loginState.message}</p>
+      )}
+      {error && <p className="error">{error}</p>}
     </div>
   );
 }
@@ -361,7 +448,7 @@ function App() {
 }
 
 function AppContent() {
-  const { loggedIn } = useContext(AuthContext); // Access the loggedIn state
+  const { loggedIn } = useContext(AuthContext);
 
   return (
     <div className="main-content">

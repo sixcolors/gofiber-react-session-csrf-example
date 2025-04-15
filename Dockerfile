@@ -1,5 +1,5 @@
 # Stage 1: Build the React app
-FROM node:latest as react-build
+FROM node:latest AS react-build
 
 WORKDIR /app
 COPY ./react-app/package.json ./react-app/package-lock.json ./
@@ -8,7 +8,7 @@ COPY ./react-app ./
 RUN npm run build
 
 # Stage 2: Build the GoFiber backend
-FROM golang:latest as go-build
+FROM golang:latest AS go-build
 
 WORKDIR /go/src/app
 COPY ./go-fiber .
@@ -38,6 +38,9 @@ COPY ./nginx/startup.sh /app/startup.sh
 
 # Expose port 8080
 EXPOSE 8080
+
+# Configure the trusted proxies for go-fiber (using loopback address by default)
+ENV TRUSTED_PROXIES=127.0.0.1
 
 # Start NGINX in the foreground on port 8080
 CMD ["sh", "/app/startup.sh"]

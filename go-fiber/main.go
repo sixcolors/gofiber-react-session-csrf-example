@@ -10,9 +10,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
-	"github.com/gofiber/fiber/v2/middleware/csrf"
-	"github.com/gofiber/fiber/v2/middleware/session"
+	"github.com/gofiber/fiber/v3"
+	"github.com/gofiber/fiber/v3/middleware/csrf"
+	"github.com/gofiber/fiber/v3/middleware/session"
 	"github.com/gofiber/storage/redis/v3"
 )
 
@@ -58,7 +58,12 @@ var (
 )
 
 func main() {
-	app := fiber.New()
+	app := fiber.New(fiber.Config{
+		TrustProxy: true,
+		TrustProxyConfig: fiber.TrustProxyConfig{
+			Proxies: getTrustedProxies(),
+		},
+	})
 
 	// Create a new session manager
 	store := createSessionStore()
@@ -69,10 +74,15 @@ func main() {
 		CookieSecure:   false, // Set to true in production
 		CookieHTTPOnly: false, // To allow JS to read the CSRF cookie
 		Session:        store,
-		Expiration:     sessionTimeout,
-		ErrorHandler: func(c *fiber.Ctx, err error) error {
+		IdleTimeout:    sessionTimeout,
+		ErrorHandler: func(c fiber.Ctx, err error) error {
 			// Log the error
 			log.Println("CSRF Error:", err)
+
+			log.Println("Host:", c.Host())
+			log.Println("Request Headers:", c.GetReqHeaders())
+			log.Println("Trusted Proxies:", getTrustedProxies())
+			log.Println("Remote IP:", c.RequestCtx().RemoteIP().String())
 
 			// Return a 403 Forbidden
 			return c.SendStatus(fiber.StatusForbidden)
@@ -81,7 +91,7 @@ func main() {
 
 	app.Use(csrf.New(csrfConfig))
 
-	app.Get("/api/", func(c *fiber.Ctx) error {
+	app.Get("/api/", func(c fiber.Ctx) error {
 		return c.SendString("Hello, World 👋!")
 	})
 
@@ -107,7 +117,7 @@ func createSessionStore() *session.Store {
 		store = createRedisSessionStore(sessionStoreEnv)
 	} else {
 		log.Println("Using in-memory session store")
-		store = session.New()
+		_, store = session.NewWithStore()
 	}
 
 	return store
@@ -128,10 +138,12 @@ func createRedisSessionStore(redisConnStr string) *session.Store {
 		Database: db,
 	})
 
-	return session.New(session.Config{
-		Storage:    storage,
-		Expiration: sessionTimeout,
+	_, store := session.NewWithStore(session.Config{
+		Storage:     storage,
+		IdleTimeout: sessionTimeout,
 	})
+
+	return store
 }
 
 func setupAuthRoutes(app *fiber.App, store *session.Store) {
@@ -141,7 +153,7 @@ func setupAuthRoutes(app *fiber.App, store *session.Store) {
 }
 
 func handleLogin(store *session.Store) fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		// Check for a session
 		sess, err := store.Get(c)
 		if err != nil {
@@ -155,7 +167,7 @@ func handleLogin(store *session.Store) fiber.Handler {
 
 		// Parse body into request struct
 		var body request
-		if err := c.BodyParser(&body); err != nil {
+		if err := c.Bind().Body(&body); err != nil {
 			return c.SendStatus(fiber.StatusBadRequest)
 		}
 
@@ -188,7 +200,7 @@ func handleLogin(store *session.Store) fiber.Handler {
 }
 
 func handleLogout(store *session.Store) fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		// Check for a session
 		sess, err := store.Get(c)
 		if err != nil {
@@ -207,7 +219,7 @@ func handleLogout(store *session.Store) fiber.Handler {
 }
 
 func handleAuthStatus(store *session.Store) fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		// Check for a session
 		sess, err := store.Get(c)
 		if err != nil {
@@ -234,14 +246,14 @@ func handleAuthStatus(store *session.Store) fiber.Handler {
 }
 
 func setupThingamabobRoutes(app *fiber.App, store *session.Store) {
-	app.Get("/api/thingamabob", requireAuth(store), getThingamabobs)
-	app.Get("/api/thingamabob/:id", requireAuth(store), getThingamabob)
-	app.Post("/api/thingamabob", requireAuth(store, "admin"), createThingamabob)
-	app.Put("/api/thingamabob/:id", requireAuth(store, "admin"), updateThingamabob)
-	app.Delete("/api/thingamabob/:id", requireAuth(store, "admin"), deleteThingamabob)
+	app.Get("/api/thingamabob", getThingamabobs, requireAuth(store))
+	app.Get("/api/thingamabob/:id", getThingamabob, requireAuth(store))
+	app.Post("/api/thingamabob", createThingamabob, requireAuth(store, "admin"))
+	app.Put("/api/thingamabob/:id", updateThingamabob, requireAuth(store, "admin"))
+	app.Delete("/api/thingamabob/:id", deleteThingamabob, requireAuth(store, "admin"))
 }
 
-func getThingamabobs(c *fiber.Ctx) error {
+func getThingamabobs(c fiber.Ctx) error {
 	type response struct {
 		ID   int    `json:"id"`
 		Name string `json:"name"`
@@ -267,7 +279,7 @@ func getThingamabobs(c *fiber.Ctx) error {
 	return c.JSON(rows)
 }
 
-func getThingamabob(c *fiber.Ctx) error {
+func getThingamabob(c fiber.Ctx) error {
 	// Check for id param
 	paramID := c.Params("id")
 	id, err := strconv.Atoi(paramID)
@@ -291,14 +303,14 @@ func getThingamabob(c *fiber.Ctx) error {
 	})
 }
 
-func createThingamabob(c *fiber.Ctx) error {
+func createThingamabob(c fiber.Ctx) error {
 	type request struct {
 		Name string `json:"name"`
 	}
 
 	// Parse body into request struct
 	var body request
-	if err := c.BodyParser(&body); err != nil {
+	if err := c.Bind().Body(&body); err != nil {
 		return c.SendStatus(fiber.StatusBadRequest)
 	}
 
@@ -319,7 +331,7 @@ func createThingamabob(c *fiber.Ctx) error {
 	})
 }
 
-func updateThingamabob(c *fiber.Ctx) error {
+func updateThingamabob(c fiber.Ctx) error {
 	// Check for id param
 	paramID := c.Params("id")
 
@@ -341,7 +353,7 @@ func updateThingamabob(c *fiber.Ctx) error {
 
 			// Parse body into request struct
 			var body request
-			if err := c.BodyParser(&body); err != nil {
+			if err := c.Bind().Body(&body); err != nil {
 				return c.SendStatus(fiber.StatusBadRequest)
 			}
 
@@ -358,7 +370,7 @@ func updateThingamabob(c *fiber.Ctx) error {
 	return c.SendStatus(fiber.StatusNotFound)
 }
 
-func deleteThingamabob(c *fiber.Ctx) error {
+func deleteThingamabob(c fiber.Ctx) error {
 	// Check for id param
 	paramID := c.Params("id")
 
@@ -391,7 +403,7 @@ func deleteThingamabob(c *fiber.Ctx) error {
 // If one or more roles are passed, the user must have at least one of the roles
 // to access the route.
 func requireAuth(store *session.Store, roles ...string) fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		// Check for a session
 		sess, err := store.Get(c)
 		if err != nil {
@@ -469,4 +481,16 @@ func parseRedisConnStr(connStr string) (host string, port int, db int, err error
 
 	host = hostPort[0]
 	return
+}
+
+// getTrustedProxies returns a slice of trusted proxy IP addresses from environment variables
+func getTrustedProxies() []string {
+	// Get trusted proxies from environment variable
+	trustedProxiesEnv := os.Getenv("TRUSTED_PROXIES")
+	if trustedProxiesEnv == "" {
+		return []string{}
+	}
+
+	// Split by comma to get individual IP addresses
+	return strings.Split(trustedProxiesEnv, ",")
 }
