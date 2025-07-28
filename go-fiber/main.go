@@ -30,7 +30,9 @@ type Thingamabob struct {
 }
 
 const (
-	sessionTimeout = time.Hour
+	sessionTimeout    = time.Hour
+	sessionCookieName = "session"
+	csrfCookieName    = "csrf"
 )
 
 var (
@@ -67,14 +69,18 @@ func main() {
 	})
 
 	// Create a new session manager
-	store := createSessionStore()
+	sessionHandler, sessionStore := createSessionStore()
+
+	// Use the session handler, before CSRF middleware
+	app.Use(sessionHandler)
 
 	// Create a new CSRF middleware
 	csrfConfig := csrf.Config{
-		CookieSameSite: "Lax",
+		CookieName:     csrfCookieName,
+		CookieSameSite: fiber.CookieSameSiteLaxMode,
 		CookieSecure:   false, // Set to true in production
 		CookieHTTPOnly: false, // To allow JS to read the CSRF cookie
-		Session:        store,
+		Session:        sessionStore,
 		IdleTimeout:    sessionTimeout,
 		ErrorHandler: func(c fiber.Ctx, err error) error {
 			// Log the error
@@ -97,10 +103,10 @@ func main() {
 	})
 
 	// Auth routes
-	setupAuthRoutes(app, store)
+	setupAuthRoutes(app)
 
 	// Thingamabob routes
-	setupThingamabobRoutes(app, store)
+	setupThingamabobRoutes(app)
 
 	// Start the Fiber app
 	if err := app.Listen(":3001"); err != nil {
@@ -108,23 +114,29 @@ func main() {
 	}
 }
 
-func createSessionStore() *session.Store {
+func createSessionStore() (fiber.Handler, *session.Store) {
 	var store *session.Store
+	var handler fiber.Handler
 
 	// Check for a session store env var
 	sessionStoreEnv := os.Getenv("SESSION_STORE")
 	if strings.HasPrefix(sessionStoreEnv, "redis://") {
 		log.Println("Using Redis session store")
-		store = createRedisSessionStore(sessionStoreEnv)
+		handler, store = createRedisSessionStore(sessionStoreEnv)
 	} else {
 		log.Println("Using in-memory session store")
-		_, store = session.NewWithStore()
+		handler, store = session.NewWithStore(
+			session.Config{
+				Extractor:   session.FromCookie(sessionCookieName),
+				IdleTimeout: sessionTimeout,
+			},
+		)
 	}
 
-	return store
+	return handler, store
 }
 
-func createRedisSessionStore(redisConnStr string) *session.Store {
+func createRedisSessionStore(redisConnStr string) (fiber.Handler, *session.Store) {
 	// Parse the Redis connection string
 	host, port, db, err := parseRedisConnStr(redisConnStr)
 	if err != nil {
@@ -139,25 +151,26 @@ func createRedisSessionStore(redisConnStr string) *session.Store {
 		Database: db,
 	})
 
-	_, store := session.NewWithStore(session.Config{
+	handler, store := session.NewWithStore(session.Config{
 		Storage:     storage,
+		Extractor:   session.FromCookie(sessionCookieName),
 		IdleTimeout: sessionTimeout,
 	})
 
-	return store
+	return handler, store
 }
 
-func setupAuthRoutes(app *fiber.App, store *session.Store) {
-	app.Post("/api/auth/login", handleLogin(store))
-	app.Post("/api/auth/logout", handleLogout(store))
-	app.Get("/api/auth/status", handleAuthStatus(store))
+func setupAuthRoutes(app *fiber.App) {
+	app.Post("/api/auth/login", handleLogin())
+	app.Post("/api/auth/logout", handleLogout())
+	app.Get("/api/auth/status", handleAuthStatus())
 }
 
-func handleLogin(store *session.Store) fiber.Handler {
+func handleLogin() fiber.Handler {
 	return func(c fiber.Ctx) error {
 		// Check for a session
-		sess, err := store.Get(c)
-		if err != nil {
+		handler := session.FromContext(c)
+		if handler == nil {
 			return c.SendStatus(fiber.StatusInternalServerError)
 		}
 
@@ -175,15 +188,17 @@ func handleLogin(store *session.Store) fiber.Handler {
 		// Simulated login - should be replaced with secure authentication logic
 		if user, ok := usersDB[body.Username]; ok {
 			if user.Password == body.Password {
-				// Set session values
-				sess.Set("loggedIn", true)
-				sess.Set("username", body.Username)
-				sess.Set("roles", user.Roles)
-
-				// Save the session
-				if err := sess.Save(); err != nil {
+				// Regenerate session ID to prevent session fixation attacks
+				if err := handler.Regenerate(); err != nil {
 					return c.SendStatus(fiber.StatusInternalServerError)
 				}
+				// Set session values
+				handler.Set("loggedIn", true)
+				handler.Set("username", body.Username)
+				handler.Set("roles", user.Roles)
+
+				// Handler saves the session automatically
+				// so we don't need to call Save() manually
 
 				return c.JSON(fiber.Map{
 					"loggedIn":       true,
@@ -200,16 +215,16 @@ func handleLogin(store *session.Store) fiber.Handler {
 	}
 }
 
-func handleLogout(store *session.Store) fiber.Handler {
+func handleLogout() fiber.Handler {
 	return func(c fiber.Ctx) error {
 		// Check for a session
-		sess, err := store.Get(c)
-		if err != nil {
+		handler := session.FromContext(c)
+		if handler == nil {
 			return c.SendStatus(fiber.StatusInternalServerError)
 		}
 
 		// Destroy the session
-		if err := sess.Destroy(); err != nil {
+		if err := handler.Destroy(); err != nil {
 			return c.SendStatus(fiber.StatusInternalServerError)
 		}
 
@@ -219,23 +234,23 @@ func handleLogout(store *session.Store) fiber.Handler {
 	}
 }
 
-func handleAuthStatus(store *session.Store) fiber.Handler {
+func handleAuthStatus() fiber.Handler {
 	return func(c fiber.Ctx) error {
 		// Check for a session
-		sess, err := store.Get(c)
-		if err != nil {
+		handler := session.FromContext(c)
+		if handler == nil {
 			return c.SendStatus(fiber.StatusInternalServerError)
 		}
 
 		// Get the session values
-		if v, ok := sess.Get("loggedIn").(bool); !ok || !v {
+		if v, ok := handler.Get("loggedIn").(bool); !ok || !v {
 			return c.JSON(fiber.Map{
 				"loggedIn": false,
 			})
 		}
 
-		username := sess.Get("username")
-		roles := sess.Get("roles")
+		username := handler.Get("username")
+		roles := handler.Get("roles")
 
 		return c.JSON(fiber.Map{
 			"loggedIn":       true,
@@ -246,12 +261,12 @@ func handleAuthStatus(store *session.Store) fiber.Handler {
 	}
 }
 
-func setupThingamabobRoutes(app *fiber.App, store *session.Store) {
-	app.Get("/api/thingamabob", getThingamabobs, requireAuth(store))
-	app.Get("/api/thingamabob/:id", getThingamabob, requireAuth(store))
-	app.Post("/api/thingamabob", createThingamabob, requireAuth(store, "admin"))
-	app.Put("/api/thingamabob/:id", updateThingamabob, requireAuth(store, "admin"))
-	app.Delete("/api/thingamabob/:id", deleteThingamabob, requireAuth(store, "admin"))
+func setupThingamabobRoutes(app *fiber.App) {
+	app.Get("/api/thingamabob", getThingamabobs, requireAuth())
+	app.Get("/api/thingamabob/:id", getThingamabob, requireAuth())
+	app.Post("/api/thingamabob", createThingamabob, requireAuth("admin"))
+	app.Put("/api/thingamabob/:id", updateThingamabob, requireAuth("admin"))
+	app.Delete("/api/thingamabob/:id", deleteThingamabob, requireAuth("admin"))
 }
 
 func getThingamabobs(c fiber.Ctx) error {
@@ -403,23 +418,23 @@ func deleteThingamabob(c fiber.Ctx) error {
 // If no roles are passed, any logged in user can access the route
 // If one or more roles are passed, the user must have at least one of the roles
 // to access the route.
-func requireAuth(store *session.Store, roles ...string) fiber.Handler {
+func requireAuth(roles ...string) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		// Check for a session
-		sess, err := store.Get(c)
-		if err != nil {
+		handler := session.FromContext(c)
+		if handler == nil {
 			return c.SendStatus(fiber.StatusInternalServerError)
 		}
 
 		// Check if the user is logged in
-		if v, ok := sess.Get("loggedIn").(bool); !ok || !v {
+		if v, ok := handler.Get("loggedIn").(bool); !ok || !v {
 			return c.SendStatus(fiber.StatusUnauthorized)
 		}
 
 		// Check if a role is required and if the user has the required role
 		if len(roles) > 0 {
 			match := false
-			if userRoles, ok := sess.Get("roles").([]string); ok {
+			if userRoles, ok := handler.Get("roles").([]string); ok {
 				for _, role := range roles {
 					if contains(userRoles, role) {
 						match = true

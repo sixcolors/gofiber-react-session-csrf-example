@@ -28,7 +28,7 @@ const AuthProvider = ({ children }) => {
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const apiRequest = useCallback(async (url, options, csrfRefreshed = false) => {
-    const csrfToken = Cookies.get('csrf_');
+    const csrfToken = Cookies.get('csrf');
 
     const response = await fetch(url, {
       ...options,
