@@ -18,7 +18,7 @@ It still needs the following:
 - [x] React debugging (see [launch.json](.vscode/launch.json)) `Launch Chrome against localhost` config for debugging the frontend in VSCode
 - [ ] Seperate frontend and backend docker containers
 - [ ] SECURE Dockerfiles (ie dont run as root etc)
-- [ ] Secure handling of login credentials in the backend
+- [x] Secure handling of login credentials in the backend
 - [x] Timeouts on the frontend
 - [x] Mechanism to refresh auth status on the frontend (if auth error happens, or the user does something that changes their auth status)
 - [x] TODO: session timeout in the front end with multiple tabs open could cause the session to be extended indefinitely, fix
@@ -54,14 +54,27 @@ The server will be available at [http://localhost:8080](http://localhost:8080).
 
 ## Credentials
 
-There are two users:
+There are two users with securely hashed passwords (using Argon2id):
 
 - `admin` with password `admin`
 - `user` with password `user`
 
+## Security Features
+
+This example demonstrates secure authentication practices:
+- **Password Hashing**: Argon2id for secure password storage.
+- **Rate Limiting**: 10 login attempts per minute per IP to prevent brute force.
+- **Timing Attack Mitigation**: Constant-time password verification.
+- **CSRF Protection**: Token-based CSRF prevention using sessions.
+- **Session Management**: Secure session handling with regeneration and timeouts.
+
+**Note**: For production, enable HTTPS, set `CookieSecure: true`, and use environment variables for sensitive config.
+
 ## API
 
 ### `POST /api/auth/login`
+
+Rate limited to 10 requests per minute per IP address.
 
 request:
 ```json
@@ -111,18 +124,16 @@ response:
 
 response:
 ```json
-{
-  [
-    {
-      "id": 1,
-      "name": "Thingamabob 1"
-    },
-    {
-      "id": 2,
-      "name": "Thingamabob 2"
-    }
-  ]
-}
+[
+  {
+    "id": 1,
+    "name": "Thingamabob 1"
+  },
+  {
+    "id": 2,
+    "name": "Thingamabob 2"
+  }
+]
 ```
 
 ### `POST /api/thingamabob`

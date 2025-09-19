@@ -12,9 +12,12 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/gofiber/fiber/v3/extractors"
 	"github.com/gofiber/fiber/v3/middleware/csrf"
+	"github.com/gofiber/fiber/v3/middleware/limiter"
 	"github.com/gofiber/fiber/v3/middleware/session"
 	"github.com/gofiber/storage/redis/v3"
+	"github.com/sixcolors/argon2id"
 )
 
 // User represents a user in the system
@@ -38,14 +41,17 @@ const (
 var (
 	ErrRedisConnStr = errors.New("invalid Redis connection string")
 
+	// Dummy hash for timing attack mitigation (valid Argon2id hash for a dummy password)
+	dummyHash = "$argon2id$v=19$m=65536,t=3,p=2$dummySaltDummySaltDu$dummyHashDummyHashDummyHashDummy"
+
 	//Fake DBs
 	usersDB = map[string]User{
 		"admin": {
-			Password: "admin",
+			Password: "admin", // Will be hashed in init
 			Roles:    []string{"admin", "user"},
 		},
 		"user": {
-			Password: "user",
+			Password: "user", // Will be hashed in init
 			Roles:    []string{"user"},
 		},
 	}
@@ -59,6 +65,18 @@ var (
 
 	thingamabobMux = &sync.RWMutex{}
 )
+
+func init() {
+	// Hash the passwords for demo purposes
+	for username, user := range usersDB {
+		hashed, err := argon2id.GenerateFromPassword([]byte(user.Password), nil)
+		if err != nil {
+			log.Fatal("Failed to hash password for", username, err)
+		}
+		user.Password = string(hashed)
+		usersDB[username] = user
+	}
+}
 
 func main() {
 	app := fiber.New(fiber.Config{
@@ -127,7 +145,7 @@ func createSessionStore() (fiber.Handler, *session.Store) {
 		log.Println("Using in-memory session store")
 		handler, store = session.NewWithStore(
 			session.Config{
-				Extractor:   session.FromCookie(sessionCookieName),
+				Extractor:   extractors.FromCookie(sessionCookieName),
 				IdleTimeout: sessionTimeout,
 			},
 		)
@@ -153,7 +171,7 @@ func createRedisSessionStore(redisConnStr string) (fiber.Handler, *session.Store
 
 	handler, store := session.NewWithStore(session.Config{
 		Storage:     storage,
-		Extractor:   session.FromCookie(sessionCookieName),
+		Extractor:   extractors.FromCookie(sessionCookieName),
 		IdleTimeout: sessionTimeout,
 	})
 
@@ -161,7 +179,21 @@ func createRedisSessionStore(redisConnStr string) (fiber.Handler, *session.Store
 }
 
 func setupAuthRoutes(app *fiber.App) {
-	app.Post("/api/auth/login", handleLogin())
+	// Rate limiter for auth routes to prevent brute force
+	authLimiter := limiter.New(limiter.Config{
+		Max:        10,              // Max 10 requests
+		Expiration: 1 * time.Minute, // Per minute
+		KeyGenerator: func(c fiber.Ctx) string {
+			return c.IP() // Limit by IP
+		},
+		LimitReached: func(c fiber.Ctx) error {
+			return c.Status(fiber.StatusTooManyRequests).JSON(fiber.Map{
+				"error": "Too many requests, please try again later.",
+			})
+		},
+	})
+
+	app.Post("/api/auth/login", authLimiter, handleLogin())
 	app.Post("/api/auth/logout", handleLogout())
 	app.Get("/api/auth/status", handleAuthStatus())
 }
@@ -185,28 +217,40 @@ func handleLogin() fiber.Handler {
 			return c.SendStatus(fiber.StatusBadRequest)
 		}
 
+		// Basic input validation
+		if len(body.Username) < 3 || len(body.Username) > 50 || len(body.Password) < 6 {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"error": "Invalid username or password format.",
+			})
+		}
+
 		// Simulated login - should be replaced with secure authentication logic
-		if user, ok := usersDB[body.Username]; ok {
-			if user.Password == body.Password {
-				// Regenerate session ID to prevent session fixation attacks
-				if err := handler.Regenerate(); err != nil {
-					return c.SendStatus(fiber.StatusInternalServerError)
-				}
-				// Set session values
-				handler.Set("loggedIn", true)
-				handler.Set("username", body.Username)
-				handler.Set("roles", user.Roles)
+		user, exists := usersDB[body.Username]
+		hashToCheck := dummyHash
+		if exists {
+			hashToCheck = user.Password
+		}
 
-				// Handler saves the session automatically
-				// so we don't need to call Save() manually
-
-				return c.JSON(fiber.Map{
-					"loggedIn":       true,
-					"username":       body.Username,
-					"roles":          user.Roles,
-					"sessionTimeout": sessionTimeout.Seconds(),
-				})
+		// Always perform the comparison to mitigate timing attacks
+		if argon2id.CompareHashAndPassword([]byte(hashToCheck), []byte(body.Password)) == nil && exists {
+			// Regenerate session ID to prevent session fixation attacks
+			if err := handler.Regenerate(); err != nil {
+				return c.SendStatus(fiber.StatusInternalServerError)
 			}
+			// Set session values
+			handler.Set("loggedIn", true)
+			handler.Set("username", body.Username)
+			handler.Set("roles", user.Roles)
+
+			// Handler saves the session automatically
+			// so we don't need to call Save() manually
+
+			return c.JSON(fiber.Map{
+				"loggedIn":       true,
+				"username":       body.Username,
+				"roles":          user.Roles,
+				"sessionTimeout": sessionTimeout.Seconds(),
+			})
 		}
 
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
