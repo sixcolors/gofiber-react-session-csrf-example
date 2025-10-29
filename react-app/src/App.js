@@ -28,7 +28,13 @@ const AuthProvider = ({ children }) => {
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const apiRequest = useCallback(async (url, options, csrfRefreshed = false) => {
-    const csrfToken = Cookies.get('csrf');
+    let csrfToken = Cookies.get('csrf');
+
+    // If no CSRF token, call the hello endpoint to get one
+    if (!csrfToken) {
+      await fetch('/api', { method: 'GET' });
+      csrfToken = Cookies.get('csrf');
+    }
 
     const response = await fetch(url, {
       ...options,

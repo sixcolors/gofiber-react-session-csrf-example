@@ -267,6 +267,11 @@ func handleLogout() fiber.Handler {
 			return c.SendStatus(fiber.StatusInternalServerError)
 		}
 
+		// Delete the CSRF token
+		if err := csrf.HandlerFromContext(c).DeleteToken(c); err != nil {
+			return c.SendStatus(fiber.StatusInternalServerError)
+		}
+
 		// Destroy the session
 		if err := handler.Destroy(); err != nil {
 			return c.SendStatus(fiber.StatusInternalServerError)
