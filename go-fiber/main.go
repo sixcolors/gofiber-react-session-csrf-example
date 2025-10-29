@@ -218,7 +218,7 @@ func handleLogin() fiber.Handler {
 		}
 
 		// Basic input validation
-		if len(body.Username) < 3 || len(body.Username) > 50 || len(body.Password) < 6 {
+		if len(body.Username) < 3 || len(body.Username) > 50 || len(body.Password) < 4 {
 			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 				"error": "Invalid username or password format.",
 			})
