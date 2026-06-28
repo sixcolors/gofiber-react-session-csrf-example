@@ -1,6 +1,6 @@
 # Example GoFiber Backend with React Frontend using Sessions and CSRF
 
-**Note:** This is an example has been updated to use the latest GoFiber v3 beta version. You can check the [v2](https://github.com/sixcolors/gofiber-react-session-csrf-example/tree/v2) branch for the a version that uses GoFiber v2.
+**Note:** This is an example has been updated to use the latest GoFiber v3 version. You can check the [v2](https://github.com/sixcolors/gofiber-react-session-csrf-example/tree/v2) branch for the a version that uses GoFiber v2.
 
 This is an example of a GoFiber backend with a React frontend that uses sessions and CSRF tokens.
 

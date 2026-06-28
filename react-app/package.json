@@ -4,13 +4,13 @@
   "private": true,
   "dependencies": {
     "@babel/plugin-proposal-private-property-in-object": "^7.21.11",
-    "@testing-library/react": "^16.3.1",
+    "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",
-    "js-cookie": "^3.0.5",
-    "react": "^19.2.3",
-    "react-dom": "^19.2.3",
+    "js-cookie": "^3.0.8",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
     "react-scripts": "^5.0.1",
-    "web-vitals": "^5.1.0"
+    "web-vitals": "^5.3.0"
   },
   "scripts": {
     "start": "react-scripts start",
@@ -38,5 +38,10 @@
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.9.1"
+  },
+  "allowScripts": {
+    "core-js@3.44.0": true,
+    "core-js-pure@3.44.0": true,
+    "fsevents@2.3.3": true
   }
 }
